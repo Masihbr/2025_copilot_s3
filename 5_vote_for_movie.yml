@@ -1,0 +1,575 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe API - Vote for Movie
+  version: 1.0.0
+  description: |
+    This document describes the API endpoints and WebSocket events for voting on movies in MovieSwipe. 
+    Users can vote on movies in active voting sessions using a swipe interface (right for like, left for dislike).
+    Real-time updates are provided via WebSocket connections.
+servers:
+  - url: /api/voting
+    description: Voting endpoints
+  - url: /socket.io
+    description: WebSocket events
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Vote:
+      type: object
+      properties:
+        userId:
+          type: string
+        movieId:
+          type: string
+        vote:
+          type: string
+          enum: [like, dislike]
+          description: "like = swipe right (yes), dislike = swipe left (no)"
+        timestamp:
+          type: string
+          format: date-time
+    VoteSubmission:
+      type: object
+      required:
+        - movieId
+        - vote
+      properties:
+        movieId:
+          type: string
+          description: ID of the movie being voted on
+        vote:
+          type: string
+          enum: [like, dislike]
+          description: "like = swipe right (yes), dislike = swipe left (no)"
+    VoteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            sessionId:
+              type: string
+            movieId:
+              type: string
+            vote:
+              type: string
+              enum: [like, dislike]
+            timestamp:
+              type: string
+              format: date-time
+    VotingSession:
+      type: object
+      properties:
+        id:
+          type: string
+        groupId:
+          type: string
+        status:
+          type: string
+          enum: [active, completed, cancelled]
+        movieRecommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieRecommendation'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vote'
+        memberVoteCounts:
+          type: object
+          properties:
+            totalMembers:
+              type: integer
+            votedMembers:
+              type: integer
+            pendingMembers:
+              type: integer
+    MovieRecommendation:
+      type: object
+      properties:
+        movieId:
+          type: string
+        title:
+          type: string
+        year:
+          type: integer
+        genres:
+          type: array
+          items:
+            type: string
+        posterUrl:
+          type: string
+        score:
+          type: number
+        reason:
+          type: string
+    VotingStats:
+      type: object
+      properties:
+        totalMembers:
+          type: integer
+        votedMembers:
+          type: integer
+        pendingMembers:
+          type: integer
+        participationRate:
+          type: number
+        totalVotes:
+          type: integer
+        voteBreakdown:
+          type: object
+          properties:
+            likes:
+              type: integer
+            dislikes:
+              type: integer
+        sessionStatus:
+          type: string
+    WebSocketEvent:
+      type: object
+      properties:
+        event:
+          type: string
+          enum: [vote-updated, session-updated, session-completed, session-cancelled, user-joined, user-left, error]
+        data:
+          type: object
+    VoteUpdatedEvent:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        movieId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        vote:
+          type: string
+          enum: [like, dislike]
+        timestamp:
+          type: string
+          format: date-time
+        sessionStats:
+          $ref: '#/components/schemas/VotingStats'
+
+paths:
+  /sessions/{sessionId}/vote:
+    post:
+      summary: Submit a vote for a movie
+      description: |
+        Submit a vote for a movie in an active voting session.
+        - Swipe right = "like" (yes)
+        - Swipe left = "dislike" (no)
+        Users can change their vote before the session is completed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: ID of the voting session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoteSubmission'
+            examples:
+              like_vote:
+                summary: Vote like (swipe right)
+                value:
+                  movieId: "tt0111161"
+                  vote: "like"
+              dislike_vote:
+                summary: Vote dislike (swipe left)
+                value:
+                  movieId: "tt0111161"
+                  vote: "dislike"
+      responses:
+        '200':
+          description: Vote submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteResponse'
+              examples:
+                success_response:
+                  summary: Successful vote submission
+                  value:
+                    success: true
+                    message: "Vote submitted successfully"
+                    data:
+                      sessionId: "507f1f77bcf86cd799439011"
+                      movieId: "tt0111161"
+                      vote: "like"
+                      timestamp: "2024-01-15T10:30:00Z"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              examples:
+                invalid_vote:
+                  summary: Invalid vote value
+                  value:
+                    success: false
+                    error: "Vote must be like or dislike"
+                invalid_movie:
+                  summary: Invalid movie for session
+                  value:
+                    success: false
+                    error: "Invalid movie for this voting session"
+                inactive_session:
+                  summary: Session not active
+                  value:
+                    success: false
+                    error: "Voting session is not active"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              examples:
+                not_member:
+                  summary: Not a group member
+                  value:
+                    success: false
+                    error: "Only group members can vote"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              examples:
+                session_not_found:
+                  summary: Session not found
+                  value:
+                    success: false
+                    error: "Voting session not found"
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/votes:
+    get:
+      summary: Get user's votes for a session
+      description: Retrieve all votes submitted by the authenticated user for a voting session.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: ID of the voting session
+      responses:
+        '200':
+          description: User's votes retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Vote'
+              examples:
+                user_votes:
+                  summary: User's votes for session
+                  value:
+                    success: true
+                    data: [
+                      {
+                        userId: "507f1f77bcf86cd799439012",
+                        movieId: "tt0111161",
+                        vote: "like",
+                        timestamp: "2024-01-15T10:30:00Z"
+                      },
+                      {
+                        userId: "507f1f77bcf86cd799439012",
+                        movieId: "tt0068646",
+                        vote: "dislike",
+                        timestamp: "2024-01-15T10:35:00Z"
+                      }
+                    ]
+        '404':
+          description: Session not found
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/stats:
+    get:
+      summary: Get voting statistics
+      description: Retrieve voting statistics for a session, including participation rate and vote breakdown.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: ID of the voting session
+      responses:
+        '200':
+          description: Voting statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VotingStats'
+              examples:
+                voting_stats:
+                  summary: Voting statistics
+                  value:
+                    success: true
+                    data:
+                      totalMembers: 4
+                      votedMembers: 3
+                      pendingMembers: 1
+                      participationRate: 75
+                      totalVotes: 12
+                      voteBreakdown:
+                        likes: 8
+                        dislikes: 4
+                      sessionStatus: "active"
+                      startedAt: "2024-01-15T10:00:00Z"
+                      endedAt: null
+        '404':
+          description: Session not found
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}:
+    get:
+      summary: Get voting session details
+      description: Retrieve detailed information about a voting session, including all votes and recommendations.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: ID of the voting session
+      responses:
+        '200':
+          description: Voting session details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VotingSession'
+        '404':
+          description: Session not found
+        '403':
+          description: Access denied
+        '500':
+          description: Server error
+
+# WebSocket Events Documentation
+components:
+  schemas:
+    WebSocketConnection:
+      type: object
+      properties:
+        auth:
+          type: object
+          properties:
+            token:
+              type: string
+              description: JWT token for authentication
+    WebSocketEvents:
+      type: object
+      properties:
+        join-group:
+          type: object
+          properties:
+            groupId:
+              type: string
+              description: ID of the group to join
+        vote:
+          type: object
+          properties:
+            sessionId:
+              type: string
+            movieId:
+              type: string
+            vote:
+              type: string
+              enum: [like, dislike]
+        complete-session:
+          type: object
+          properties:
+            sessionId:
+              type: string
+        cancel-session:
+          type: object
+          properties:
+            sessionId:
+              type: string
+
+# WebSocket Event Examples
+examples:
+  websocket_events:
+    join_group:
+      summary: Join group room
+      value:
+        event: "join-group"
+        data: "507f1f77bcf86cd799439011"
+    submit_vote:
+      summary: Submit vote via WebSocket
+      value:
+        event: "vote"
+        data:
+          sessionId: "507f1f77bcf86cd799439011"
+          movieId: "tt0111161"
+          vote: "like"
+    vote_updated_event:
+      summary: Vote updated event (received)
+      value:
+        event: "vote-updated"
+        data:
+          sessionId: "507f1f77bcf86cd799439011"
+          movieId: "tt0111161"
+          userId: "507f1f77bcf86cd799439012"
+          userName: "John Doe"
+          vote: "like"
+          timestamp: "2024-01-15T10:30:00Z"
+          sessionStats:
+            totalMembers: 4
+            votedMembers: 3
+            participationRate: 75
+            voteBreakdown:
+              likes: 8
+              dislikes: 4
+    session_updated_event:
+      summary: Session updated event (received)
+      value:
+        event: "session-updated"
+        data:
+          sessionId: "507f1f77bcf86cd799439011"
+          session:
+            id: "507f1f77bcf86cd799439011"
+            status: "active"
+            memberVoteCounts:
+              totalMembers: 4
+              votedMembers: 3
+              pendingMembers: 1
+    session_completed_event:
+      summary: Session completed event (received)
+      value:
+        event: "session-completed"
+        data:
+          sessionId: "507f1f77bcf86cd799439011"
+          results: [
+            {
+              movieId: "tt0111161",
+              title: "The Shawshank Redemption",
+              likeCount: 3,
+              dislikeCount: 1,
+              score: 50
+            }
+          ]
+          endedAt: "2024-01-15T11:00:00Z"
+    user_joined_event:
+      summary: User joined group event (received)
+      value:
+        event: "user-joined"
+        data:
+          userId: "507f1f77bcf86cd799439012"
+          userName: "John Doe"
+          userEmail: "john@example.com"
+    error_event:
+      summary: Error event (received)
+      value:
+        event: "error"
+        data:
+          message: "Failed to submit vote"
+
+# WebSocket Connection Guide
+websocket_guide:
+  connection:
+    description: |
+      To connect to the WebSocket server:
+      1. Connect to ws://localhost:3000/socket.io
+      2. Authenticate using JWT token in auth object
+      3. Join group rooms to receive real-time updates
+    example: |
+      const socket = io('ws://localhost:3000', {
+        auth: {
+          token: 'your-jwt-token'
+        }
+      });
+  
+  events:
+    client_to_server:
+      - join-group: Join a group room to receive updates
+      - vote: Submit a vote for a movie
+      - complete-session: Complete the voting session (group owner only)
+      - cancel-session: Cancel the voting session (group owner only)
+    
+    server_to_client:
+      - vote-updated: Real-time vote update
+      - session-updated: Session data updated
+      - session-completed: Voting session completed
+      - session-cancelled: Voting session cancelled
+      - user-joined: New user joined the group
+      - user-left: User left the group
+      - error: Error occurred
+
+  voting_flow:
+    description: |
+      Typical voting flow:
+      1. User joins group room via WebSocket
+      2. User receives session updates
+      3. User swipes right/left on movies
+      4. Vote is submitted via WebSocket
+      5. All group members receive real-time updates
+      6. Group owner can complete session when ready
+      7. All members receive final results 

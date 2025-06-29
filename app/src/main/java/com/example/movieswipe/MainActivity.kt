@@ -35,6 +35,21 @@ import androidx.compose.ui.text.input.TextFieldValue
 import com.squareup.moshi.Types
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import io.socket.client.IO
+import io.socket.client.Socket
+import org.json.JSONObject
 
 @JsonClass(generateAdapter = true)
 data class UserProfile(
@@ -626,14 +641,299 @@ fun startVotingSession(token: String, groupId: String, onSuccess: (VotingSession
 
 @Composable
 fun VotingSessionStatus(session: VotingSession) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var userVotes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var votingStats by remember { mutableStateOf<VotingStats?>(null) }
+    var wsSocket by remember { mutableStateOf<Socket?>(null) }
+    val jwtToken = remember { AuthPrefs.getTokenFlow(context) }
+
+    // Fetch user votes on session load
+    LaunchedEffect(session.id) {
+        val token = AuthPrefs.getTokenFlow(context).firstOrNull()
+        if (token != null) {
+            fetchUserVotes(token, session.id) { votes ->
+                userVotes = votes.associate { it.movieId to it.vote }
+            }
+            fetchVotingStats(token, session.id) { stats ->
+                votingStats = stats
+            }
+        }
+    }
+
+    // WebSocket for real-time updates
+    LaunchedEffect(session.id) {
+        val token = AuthPrefs.getTokenFlow(context).firstOrNull()
+        if (token != null) {
+            val opts = IO.Options()
+            opts.auth = mapOf("token" to token)
+            val socket = IO.socket("http://localhost:3000", opts)
+            wsSocket = socket
+            socket.on("vote-updated") { args ->
+                val data = args[0] as JSONObject
+                val movieId = data.getString("movieId")
+                val vote = data.getString("vote")
+                userVotes = userVotes.toMutableMap().apply { put(movieId, vote) }
+                // Optionally update stats
+                val statsObj = data.optJSONObject("sessionStats")
+                if (statsObj != null) {
+                    votingStats = VotingStats(
+                        totalMembers = statsObj.optInt("totalMembers"),
+                        votedMembers = statsObj.optInt("votedMembers"),
+                        pendingMembers = statsObj.optInt("pendingMembers"),
+                        participationRate = statsObj.optDouble("participationRate"),
+                        totalVotes = statsObj.optInt("totalVotes"),
+                        voteBreakdown = VoteBreakdown(
+                            likes = statsObj.optJSONObject("voteBreakdown")?.optInt("likes") ?: 0,
+                            dislikes = statsObj.optJSONObject("voteBreakdown")?.optInt("dislikes") ?: 0
+                        ),
+                        sessionStatus = statsObj.optString("sessionStatus")
+                    )
+                }
+            }
+            socket.connect()
+            socket.emit("join-group", session.groupId)
+        }
+        onDispose { wsSocket?.disconnect() }
+    }
+
     Column(modifier = Modifier.padding(8.dp)) {
         Text("Voting Session Status: ${session.status}", style = MaterialTheme.typography.subtitle1)
         Text("Started: ${session.startedAt ?: "-"}")
         if (session.status == "active") {
-            Text("Recommended Movies:")
-            session.movieRecommendations.forEach { movie ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("- ${movie.title} (${movie.year ?: "?"}) [${movie.genres.joinToString()}]")
-                    movie.reason?.let { Text("  [Reason: $it]", style = MaterialTheme.typography.caption) }
+            VotingSwipeStack(
+                session = session,
+                userVotes = userVotes,
+                onVote = { movieId, vote ->
+                    val token = AuthPrefs.getTokenFlow(context).firstOrNull()
+                    if (token != null) {
+                        submitVote(token, session.id, movieId, vote) { success ->
+                            if (success) {
+                                userVotes = userVotes.toMutableMap().apply { put(movieId, vote) }
+                            }
+                        }
+                    }
+                }
+            )
+            votingStats?.let {
+                Text("Participation: ${it.votedMembers}/${it.totalMembers} (${it.participationRate}%)")
+                Text("Likes: ${it.voteBreakdown.likes}, Dislikes: ${it.voteBreakdown.dislikes}")
+            }
+        } else if (session.status == "completed") {
+            Text("Voting Completed. Results:")
+            session.results?.forEach { result ->
+                Text("- ${result.title} (${result.year ?: "?"}): ${result.likeCount ?: 0} likes, ${result.dislikeCount ?: 0} dislikes, score: ${result.score ?: 0.0}")
+            }
+        }
+    }
+}
+
+@Composable
+fun VotingSwipeStack(
+    session: VotingSession,
+    userVotes: Map<String, String>,
+    onVote: (String, String) -> Unit
+) {
+    val movies = session.movieRecommendations
+    var currentIndex by remember { mutableStateOf(0) }
+    val total = movies.size
+    if (currentIndex >= total) {
+        Text("You have voted on all movies.")
+        return
+    }
+    val movie = movies[currentIndex]
+    val vote = userVotes[movie.movieId]
+    val offsetX = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(320.dp)
+            .pointerInput(movie.movieId) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        when {
+                            offsetX.value > 200f -> {
+                                onVote(movie.movieId, "like")
+                                scope.launch {
+                                    offsetX.animateTo(0f, tween(300))
+                                    currentIndex++
+                                }
+                            }
+                            offsetX.value < -200f -> {
+                                onVote(movie.movieId, "dislike")
+                                scope.launch {
+                                    offsetX.animateTo(0f, tween(300))
+                                    currentIndex++
+                                }
+                            }
+                            else -> scope.launch { offsetX.animateTo(0f, tween(300)) }
+                        }
+                    },
+                    onHorizontalDrag = { _, dragAmount ->
+                        scope.launch { offsetX.snapTo(offsetX.value + dragAmount) }
+                    }
+                )
+            }
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(x = offsetX.value.dp)
+                .scale(1f - (kotlin.math.abs(offsetX.value) / 2000f))
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.White)
+                .fillMaxSize()
+                .padding(24.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(movie.title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("Year: ${movie.year ?: "?"}")
+                Text("Genres: ${movie.genres.joinToString()}")
+                movie.reason?.let { Text("Why: $it", fontSize = 14.sp, color = Color.Gray) }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Swipe right for YES, left for NO", color = Color.Gray)
+                vote?.let {
+                    Text("Your vote: ${it.uppercase()}", color = if (it == "like") Color.Green else Color.Red)
                 }
             }
+        }
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Button(onClick = {
+            onVote(movie.movieId, "dislike")
+            currentIndex++
+        }, enabled = vote != "dislike") { Text("Dislike") }
+        Spacer(modifier = Modifier.width(32.dp))
+        Button(onClick = {
+            onVote(movie.movieId, "like")
+            currentIndex++
+        }, enabled = vote != "like") { Text("Like") }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    Text("Movie ${currentIndex + 1} of $total")
+}
+
+// --- API and WebSocket helpers ---
+
+@JsonClass(generateAdapter = true)
+data class VotingStats(
+    val totalMembers: Int,
+    val votedMembers: Int,
+    val pendingMembers: Int,
+    val participationRate: Double,
+    val totalVotes: Int,
+    val voteBreakdown: VoteBreakdown,
+    val sessionStatus: String
+)
+@JsonClass(generateAdapter = true)
+data class VoteBreakdown(
+    val likes: Int,
+    val dislikes: Int
+)
+
+fun fetchUserVotes(token: String, sessionId: String, onResult: (List<Vote>) -> Unit) {
+    val client = OkHttpClient()
+    val request = Request.Builder()
+        .url("http://localhost:3000/api/voting/sessions/$sessionId/votes")
+        .addHeader("Authorization", "Bearer $token")
+        .build()
+    Thread {
+        try {
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val moshi = Moshi.Builder().build()
+                val json = response.body?.string()
+                val obj = JSONObject(json)
+                val data = obj.optJSONArray("data")
+                val votes = mutableListOf<Vote>()
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val v = data.getJSONObject(i)
+                        votes.add(
+                            Vote(
+                                userId = v.getString("userId"),
+                                movieId = v.getString("movieId"),
+                                vote = v.getString("vote"),
+                                timestamp = v.optString("timestamp")
+                            )
+                        )
+                    }
+                }
+                onResult(votes)
+            } else {
+                onResult(emptyList())
+            }
+        } catch (e: Exception) {
+            onResult(emptyList())
+        }
+    }.start()
+}
+
+fun submitVote(token: String, sessionId: String, movieId: String, vote: String, onResult: (Boolean) -> Unit) {
+    val client = OkHttpClient()
+    val json = "{" +
+            "\"movieId\":\"$movieId\"," +
+            "\"vote\":\"$vote\"}"
+    val body = json.toRequestBody("application/json".toMediaType())
+    val request = Request.Builder()
+        .url("http://localhost:3000/api/voting/sessions/$sessionId/vote")
+        .post(body)
+        .addHeader("Authorization", "Bearer $token")
+        .build()
+    Thread {
+        try {
+            val response = client.newCall(request).execute()
+            onResult(response.isSuccessful)
+        } catch (e: Exception) {
+            onResult(false)
+        }
+    }.start()
+}
+
+fun fetchVotingStats(token: String, sessionId: String, onResult: (VotingStats?) -> Unit) {
+    val client = OkHttpClient()
+    val request = Request.Builder()
+        .url("http://localhost:3000/api/voting/sessions/$sessionId/stats")
+        .addHeader("Authorization", "Bearer $token")
+        .build()
+    Thread {
+        try {
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val moshi = Moshi.Builder().build()
+                val json = response.body?.string()
+                val obj = JSONObject(json)
+                val data = obj.optJSONObject("data")
+                if (data != null) {
+                    val stats = VotingStats(
+                        totalMembers = data.optInt("totalMembers"),
+                        votedMembers = data.optInt("votedMembers"),
+                        pendingMembers = data.optInt("pendingMembers"),
+                        participationRate = data.optDouble("participationRate"),
+                        totalVotes = data.optInt("totalVotes"),
+                        voteBreakdown = VoteBreakdown(
+                            likes = data.optJSONObject("voteBreakdown")?.optInt("likes") ?: 0,
+                            dislikes = data.optJSONObject("voteBreakdown")?.optInt("dislikes") ?: 0
+                        ),
+                        sessionStatus = data.optString("sessionStatus")
+                    )
+                    onResult(stats)
+                } else {
+                    onResult(null)
+                }
+            } else {
+                onResult(null)
+            }
+        } catch (e: Exception) {
+            onResult(null)
+        }
+    }.start()
+}
