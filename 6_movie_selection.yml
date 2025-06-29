@@ -1,0 +1,575 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe API - Movie Selection
+  version: 1.0.0
+  description: |
+    This document describes the API endpoints and WebSocket events for movie selection in MovieSwipe. 
+    After a voting session is completed, the application determines the winning movie and displays it 
+    to all group members along with detailed results.
+servers:
+  - url: /api/voting
+    description: Voting and movie selection endpoints
+  - url: /socket.io
+    description: WebSocket events
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    SelectedMovie:
+      type: object
+      properties:
+        movieId:
+          type: string
+          description: Unique identifier for the movie
+        title:
+          type: string
+          description: Movie title
+        year:
+          type: integer
+          description: Release year
+        genres:
+          type: array
+          items:
+            type: string
+          description: List of movie genres
+        posterUrl:
+          type: string
+          description: URL to movie poster image
+        score:
+          type: number
+          description: Calculated score based on votes (likes - dislikes) / total votes * 100
+        likeCount:
+          type: integer
+          description: Number of like votes
+        dislikeCount:
+          type: integer
+          description: Number of dislike votes
+        totalVotes:
+          type: integer
+          description: Total number of votes cast
+        reason:
+          type: string
+          description: Reason why this movie was recommended
+        isWinner:
+          type: boolean
+          description: Whether this movie is the selected winner
+    MovieResults:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedMovie'
+        winner:
+          $ref: '#/components/schemas/SelectedMovie'
+        totalMovies:
+          type: integer
+    SessionCompletion:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              movieId:
+                type: string
+              title:
+                type: string
+              year:
+                type: integer
+              genres:
+                type: array
+                items:
+                  type: string
+              posterUrl:
+                type: string
+              likeCount:
+                type: integer
+              dislikeCount:
+                type: integer
+              totalVotes:
+                type: integer
+              score:
+                type: number
+        selectedMovie:
+          $ref: '#/components/schemas/SelectedMovie'
+        endedAt:
+          type: string
+          format: date-time
+    MovieSelectedEvent:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        selectedMovie:
+          $ref: '#/components/schemas/SelectedMovie'
+        timestamp:
+          type: string
+          format: date-time
+    SessionResultsEvent:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedMovie'
+        timestamp:
+          type: string
+          format: date-time
+
+paths:
+  /sessions/{sessionId}/selected-movie:
+    get:
+      summary: Get the selected movie (winner)
+      description: |
+        Retrieve the winning movie for a completed voting session. 
+        The winner is determined by the highest score (likes minus dislikes, normalized by total votes).
+        In case of a tie, the first movie with the highest score is selected.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: ID of the completed voting session
+      responses:
+        '200':
+          description: Selected movie retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/SelectedMovie'
+                  message:
+                    type: string
+              examples:
+                selected_movie:
+                  summary: Selected movie response
+                  value:
+                    success: true
+                    data:
+                      movieId: "tt0111161"
+                      title: "The Shawshank Redemption"
+                      year: 1994
+                      genres: ["Drama"]
+                      posterUrl: "https://example.com/shawshank.jpg"
+                      score: 75
+                      likeCount: 3
+                      dislikeCount: 1
+                      totalVotes: 4
+                      reason: "Highly recommended! 75% of group members love Drama movies"
+                      isWinner: true
+                    message: "Selected movie retrieved successfully"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              examples:
+                session_not_completed:
+                  summary: Session not completed
+                  value:
+                    success: false
+                    error: "Voting session is not completed"
+                no_results:
+                  summary: No results available
+                  value:
+                    success: false
+                    error: "No results available for this session"
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              examples:
+                access_denied:
+                  summary: Access denied
+                  value:
+                    success: false
+                    error: "Access denied to this voting session"
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              examples:
+                session_not_found:
+                  summary: Session not found
+                  value:
+                    success: false
+                    error: "Voting session not found"
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/results:
+    get:
+      summary: Get all movie results for a completed session
+      description: |
+        Retrieve all movie results for a completed voting session, including scores, vote counts, 
+        and which movie was selected as the winner. Results are sorted by score in descending order.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: ID of the completed voting session
+      responses:
+        '200':
+          description: Movie results retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MovieResults'
+                  message:
+                    type: string
+              examples:
+                movie_results:
+                  summary: Movie results response
+                  value:
+                    success: true
+                    data:
+                      sessionId: "507f1f77bcf86cd799439011"
+                      results: [
+                        {
+                          movieId: "tt0111161",
+                          title: "The Shawshank Redemption",
+                          year: 1994,
+                          genres: ["Drama"],
+                          posterUrl: "https://example.com/shawshank.jpg",
+                          score: 75,
+                          likeCount: 3,
+                          dislikeCount: 1,
+                          totalVotes: 4,
+                          reason: "Highly recommended! 75% of group members love Drama movies",
+                          isWinner: true
+                        },
+                        {
+                          movieId: "tt0068646",
+                          title: "The Godfather",
+                          year: 1972,
+                          genres: ["Crime", "Drama"],
+                          posterUrl: "https://example.com/godfather.jpg",
+                          score: 50,
+                          likeCount: 2,
+                          dislikeCount: 2,
+                          totalVotes: 4,
+                          reason: "50% of group members enjoy Crime movies",
+                          isWinner: false
+                        }
+                      ]
+                      winner:
+                        movieId: "tt0111161"
+                        title: "The Shawshank Redemption"
+                        year: 1994
+                        genres: ["Drama"]
+                        posterUrl: "https://example.com/shawshank.jpg"
+                        score: 75
+                        likeCount: 3
+                        dislikeCount: 1
+                        totalVotes: 4
+                        reason: "Highly recommended! 75% of group members love Drama movies"
+                        isWinner: true
+                      totalMovies: 2
+                    message: "Movie results retrieved successfully"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              examples:
+                session_not_completed:
+                  summary: Session not completed
+                  value:
+                    success: false
+                    error: "Voting session is not completed"
+                no_results:
+                  summary: No results available
+                  value:
+                    success: false
+                    error: "No results available for this session"
+        '403':
+          description: Access denied
+        '404':
+          description: Session not found
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/complete:
+    post:
+      summary: Complete voting session and select winner
+      description: |
+        Complete a voting session, calculate results, and determine the winning movie.
+        Only the session creator (group owner) can complete the session.
+        All group members will receive real-time updates via WebSocket.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+          description: ID of the voting session to complete
+      responses:
+        '200':
+          description: Voting session completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
+                      results:
+                        type: array
+                        items:
+                          type: object
+                      selectedMovie:
+                        $ref: '#/components/schemas/SelectedMovie'
+                      endedAt:
+                        type: string
+                        format: date-time
+                  message:
+                    type: string
+              examples:
+                session_completed:
+                  summary: Session completed response
+                  value:
+                    success: true
+                    data:
+                      id: "507f1f77bcf86cd799439011"
+                      status: "completed"
+                      results: [
+                        {
+                          movieId: "tt0111161",
+                          title: "The Shawshank Redemption",
+                          likeCount: 3,
+                          dislikeCount: 1,
+                          score: 75
+                        }
+                      ]
+                      selectedMovie:
+                        movieId: "tt0111161"
+                        title: "The Shawshank Redemption"
+                        year: 1994
+                        genres: ["Drama"]
+                        posterUrl: "https://example.com/shawshank.jpg"
+                        score: 75
+                        likeCount: 3
+                        dislikeCount: 1
+                        totalVotes: 4
+                        reason: "Highly recommended! 75% of group members love Drama movies"
+                        isWinner: true
+                      endedAt: "2024-01-15T11:00:00Z"
+                    message: "Voting session completed successfully"
+        '403':
+          description: Forbidden (not session creator)
+        '404':
+          description: Session not found
+        '400':
+          description: Already completed or cancelled
+        '500':
+          description: Server error
+
+# WebSocket Events Documentation
+websocket_events:
+  client_to_server:
+    complete-session:
+      description: Complete voting session and select winner
+      data:
+        sessionId: string
+      example:
+        event: "complete-session"
+        data: "507f1f77bcf86cd799439011"
+
+  server_to_client:
+    session-completed:
+      description: Voting session completed with results and selected movie
+      data:
+        $ref: '#/components/schemas/SessionCompletion'
+      example:
+        event: "session-completed"
+        data:
+          sessionId: "507f1f77bcf86cd799439011"
+          results: [
+            {
+              movieId: "tt0111161",
+              title: "The Shawshank Redemption",
+              likeCount: 3,
+              dislikeCount: 1,
+              score: 75
+            }
+          ]
+          selectedMovie:
+            movieId: "tt0111161"
+            title: "The Shawshank Redemption"
+            year: 1994
+            genres: ["Drama"]
+            posterUrl: "https://example.com/shawshank.jpg"
+            score: 75
+            likeCount: 3
+            dislikeCount: 1
+            totalVotes: 4
+            reason: "Highly recommended! 75% of group members love Drama movies"
+            isWinner: true
+          endedAt: "2024-01-15T11:00:00Z"
+
+    movie-selected:
+      description: Specific event for movie selection
+      data:
+        $ref: '#/components/schemas/MovieSelectedEvent'
+      example:
+        event: "movie-selected"
+        data:
+          sessionId: "507f1f77bcf86cd799439011"
+          selectedMovie:
+            movieId: "tt0111161"
+            title: "The Shawshank Redemption"
+            year: 1994
+            genres: ["Drama"]
+            posterUrl: "https://example.com/shawshank.jpg"
+            score: 75
+            likeCount: 3
+            dislikeCount: 1
+            totalVotes: 4
+            reason: "Highly recommended! 75% of group members love Drama movies"
+            isWinner: true
+          timestamp: "2024-01-15T11:00:00Z"
+
+    session-results:
+      description: Detailed session results with all movies
+      data:
+        $ref: '#/components/schemas/SessionResultsEvent'
+      example:
+        event: "session-results"
+        data:
+          sessionId: "507f1f77bcf86cd799439011"
+          results: [
+            {
+              movieId: "tt0111161",
+              title: "The Shawshank Redemption",
+              year: 1994,
+              genres: ["Drama"],
+              posterUrl: "https://example.com/shawshank.jpg",
+              score: 75,
+              likeCount: 3,
+              dislikeCount: 1,
+              totalVotes: 4,
+              reason: "Highly recommended! 75% of group members love Drama movies",
+              isWinner: true
+            },
+            {
+              movieId: "tt0068646",
+              title: "The Godfather",
+              year: 1972,
+              genres: ["Crime", "Drama"],
+              posterUrl: "https://example.com/godfather.jpg",
+              score: 50,
+              likeCount: 2,
+              dislikeCount: 2,
+              totalVotes: 4,
+              reason: "50% of group members enjoy Crime movies",
+              isWinner: false
+            }
+          ]
+          timestamp: "2024-01-15T11:00:00Z"
+
+# Movie Selection Flow
+movie_selection_flow:
+  description: |
+    The movie selection process follows these steps:
+    
+    1. **Voting Phase**: Group members vote on recommended movies (like/dislike)
+    2. **Completion Trigger**: Group owner completes the voting session
+    3. **Score Calculation**: Each movie's score is calculated as (likes - dislikes) / total votes * 100
+    4. **Winner Selection**: Movie with highest score is selected as winner
+    5. **Real-time Notification**: All group members receive the selected movie via WebSocket
+    6. **Results Display**: Detailed results are available via REST API and WebSocket
+    
+    **Tie Breaking**: If multiple movies have the same highest score, the first movie 
+    with that score in the results array is selected as the winner.
+  
+  score_calculation:
+    description: |
+      Movie scores are calculated using the formula:
+      score = (likes - dislikes) / total_votes * 100
+      
+      This produces a score between -100 and 100, where:
+      - Positive scores indicate more likes than dislikes
+      - Negative scores indicate more dislikes than likes
+      - Zero indicates equal likes and dislikes
+      - Higher absolute values indicate stronger group preference
+  
+  winner_criteria:
+    description: |
+      The winning movie is determined by:
+      1. Highest calculated score
+      2. In case of tie: First movie with the highest score in the results array
+      3. If no votes cast: No winner is determined
+  
+  real_time_updates:
+    description: |
+      When a session is completed:
+      1. All group members receive 'session-completed' event with full results
+      2. All group members receive 'movie-selected' event with winner details
+      3. Frontend can display the selected movie immediately
+      4. Detailed results are available via REST API endpoints 

@@ -227,6 +227,43 @@ data class VotingSessionResponse(
     val message: String?
 )
 
+@JsonClass(generateAdapter = true)
+data class SelectedMovie(
+    val movieId: String,
+    val title: String,
+    val year: Int?,
+    val genres: List<String>,
+    val posterUrl: String?,
+    val score: Double?,
+    val likeCount: Int?,
+    val dislikeCount: Int?,
+    val totalVotes: Int?,
+    val reason: String?,
+    val isWinner: Boolean
+)
+
+@JsonClass(generateAdapter = true)
+data class MovieResults(
+    val sessionId: String,
+    val results: List<SelectedMovie>,
+    val winner: SelectedMovie?,
+    val totalMovies: Int
+)
+
+@JsonClass(generateAdapter = true)
+data class SelectedMovieResponse(
+    val success: Boolean,
+    val data: SelectedMovie?,
+    val message: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class MovieResultsResponse(
+    val success: Boolean,
+    val data: MovieResults?,
+    val message: String?
+)
+
 sealed class Screen(val route: String) {
     object Auth : Screen("auth")
     object Groups : Screen("groups")
@@ -646,7 +683,13 @@ fun VotingSessionStatus(session: VotingSession) {
     var userVotes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var votingStats by remember { mutableStateOf<VotingStats?>(null) }
     var wsSocket by remember { mutableStateOf<Socket?>(null) }
+    var selectedMovie by remember { mutableStateOf<SelectedMovie?>(null) }
+    var showResults by remember { mutableStateOf(false) }
+    var isCompleting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val jwtToken = remember { AuthPrefs.getTokenFlow(context) }
+    val userId = remember { getUserIdFromToken(jwtToken.firstOrNull() ?: "") }
+    val isOwner = session.createdBy == userId
 
     // Fetch user votes on session load
     LaunchedEffect(session.id) {
@@ -669,26 +712,13 @@ fun VotingSessionStatus(session: VotingSession) {
             opts.auth = mapOf("token" to token)
             val socket = IO.socket("http://localhost:3000", opts)
             wsSocket = socket
-            socket.on("vote-updated") { args ->
+            socket.on("session-completed") { args ->
                 val data = args[0] as JSONObject
-                val movieId = data.getString("movieId")
-                val vote = data.getString("vote")
-                userVotes = userVotes.toMutableMap().apply { put(movieId, vote) }
-                // Optionally update stats
-                val statsObj = data.optJSONObject("sessionStats")
-                if (statsObj != null) {
-                    votingStats = VotingStats(
-                        totalMembers = statsObj.optInt("totalMembers"),
-                        votedMembers = statsObj.optInt("votedMembers"),
-                        pendingMembers = statsObj.optInt("pendingMembers"),
-                        participationRate = statsObj.optDouble("participationRate"),
-                        totalVotes = statsObj.optInt("totalVotes"),
-                        voteBreakdown = VoteBreakdown(
-                            likes = statsObj.optJSONObject("voteBreakdown")?.optInt("likes") ?: 0,
-                            dislikes = statsObj.optJSONObject("voteBreakdown")?.optInt("dislikes") ?: 0
-                        ),
-                        sessionStatus = statsObj.optString("sessionStatus")
-                    )
+                val selected = data.optJSONObject("selectedMovie")
+                if (selected != null) {
+                    val moshi = Moshi.Builder().build()
+                    selectedMovie = moshi.adapter(SelectedMovie::class.java).fromJson(selected.toString())
+                    showResults = true
                 }
             }
             socket.connect()
@@ -719,11 +749,72 @@ fun VotingSessionStatus(session: VotingSession) {
                 Text("Participation: ${it.votedMembers}/${it.totalMembers} (${it.participationRate}%)")
                 Text("Likes: ${it.voteBreakdown.likes}, Dislikes: ${it.voteBreakdown.dislikes}")
             }
-        } else if (session.status == "completed") {
-            Text("Voting Completed. Results:")
-            session.results?.forEach { result ->
-                Text("- ${result.title} (${result.year ?: "?"}): ${result.likeCount ?: 0} likes, ${result.dislikeCount ?: 0} dislikes, score: ${result.score ?: 0.0}")
+            if (isOwner) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = {
+                    isCompleting = true
+                    val token = AuthPrefs.getTokenFlow(context).firstOrNull()
+                    if (token != null) {
+                        completeVotingSession(token, session.id, onSuccess = {
+                            selectedMovie = it
+                            showResults = true
+                            isCompleting = false
+                        }, onError = {
+                            error = it
+                            isCompleting = false
+                        })
+                    }
+                }, enabled = !isCompleting) {
+                    Text(if (isCompleting) "Completing..." else "End Voting & Show Winner")
+                }
             }
+        }
+        if (session.status == "completed" || showResults) {
+            if (selectedMovie != null) {
+                MovieWinnerDisplay(selectedMovie!!)
+            } else {
+                val token = AuthPrefs.getTokenFlow(context).firstOrNull()
+                if (token != null) {
+                    LaunchedEffect(session.id) {
+                        fetchSelectedMovie(token, session.id, onSuccess = {
+                            selectedMovie = it
+                        }, onError = {
+                            error = it
+                        })
+                    }
+                }
+                if (selectedMovie != null) {
+                    MovieWinnerDisplay(selectedMovie!!)
+                } else {
+                    Text("Fetching winner...")
+                }
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colors.error) }
+    }
+}
+
+@Composable
+fun MovieWinnerDisplay(movie: SelectedMovie) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .background(Color(0xFFE3FCEC), RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("🎉 Winner! 🎉", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF388E3C))
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(movie.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Year: ${movie.year ?: "?"}")
+        Text("Genres: ${movie.genres.joinToString()}")
+        movie.reason?.let { Text("Why: $it", color = Color.Gray) }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Score: ${movie.score ?: 0.0}")
+        Text("Likes: ${movie.likeCount ?: 0}, Dislikes: ${movie.dislikeCount ?: 0}, Total Votes: ${movie.totalVotes ?: 0}")
+        movie.posterUrl?.let {
+            // Optionally, show poster with Coil or similar
         }
     }
 }
@@ -934,6 +1025,80 @@ fun fetchVotingStats(token: String, sessionId: String, onResult: (VotingStats?) 
             }
         } catch (e: Exception) {
             onResult(null)
+        }
+    }.start()
+}
+
+fun completeVotingSession(token: String, sessionId: String, onSuccess: (SelectedMovie) -> Unit, onError: (String) -> Unit) {
+    val client = OkHttpClient()
+    val request = Request.Builder()
+        .url("http://localhost:3000/api/voting/sessions/$sessionId/complete")
+        .post("".toRequestBody("application/json".toMediaType()))
+        .addHeader("Authorization", "Bearer $token")
+        .build()
+    Thread {
+        try {
+            val response = client.newCall(request).execute()
+            val moshi = Moshi.Builder().build()
+            val obj = JSONObject(response.body?.string() ?: "")
+            val data = obj.optJSONObject("data")
+            val selectedMovie = data?.optJSONObject("selectedMovie")
+            if (response.isSuccessful && selectedMovie != null) {
+                val movie = moshi.adapter(SelectedMovie::class.java).fromJson(selectedMovie.toString())
+                if (movie != null) onSuccess(movie) else onError("No winner found.")
+            } else {
+                onError(obj.optString("error") ?: "Failed to complete session.")
+            }
+        } catch (e: Exception) {
+            onError("Network error: ${e.localizedMessage}")
+        }
+    }.start()
+}
+
+fun fetchSelectedMovie(token: String, sessionId: String, onSuccess: (SelectedMovie) -> Unit, onError: (String) -> Unit) {
+    val client = OkHttpClient()
+    val request = Request.Builder()
+        .url("http://localhost:3000/api/voting/sessions/$sessionId/selected-movie")
+        .addHeader("Authorization", "Bearer $token")
+        .build()
+    Thread {
+        try {
+            val response = client.newCall(request).execute()
+            val moshi = Moshi.Builder().build()
+            val obj = JSONObject(response.body?.string() ?: "")
+            val data = obj.optJSONObject("data")
+            if (response.isSuccessful && data != null) {
+                val movie = moshi.adapter(SelectedMovie::class.java).fromJson(data.toString())
+                if (movie != null) onSuccess(movie) else onError("No winner found.")
+            } else {
+                onError(obj.optString("error") ?: "No winner found.")
+            }
+        } catch (e: Exception) {
+            onError("Network error: ${e.localizedMessage}")
+        }
+    }.start()
+}
+
+fun fetchMovieResults(token: String, sessionId: String, onSuccess: (MovieResults) -> Unit, onError: (String) -> Unit) {
+    val client = OkHttpClient()
+    val request = Request.Builder()
+        .url("http://localhost:3000/api/voting/sessions/$sessionId/results")
+        .addHeader("Authorization", "Bearer $token")
+        .build()
+    Thread {
+        try {
+            val response = client.newCall(request).execute()
+            val moshi = Moshi.Builder().build()
+            val obj = JSONObject(response.body?.string() ?: "")
+            val data = obj.optJSONObject("data")
+            if (response.isSuccessful && data != null) {
+                val results = moshi.adapter(MovieResults::class.java).fromJson(data.toString())
+                if (results != null) onSuccess(results) else onError("No results found.")
+            } else {
+                onError(obj.optString("error") ?: "No results found.")
+            }
+        } catch (e: Exception) {
+            onError("Network error: ${e.localizedMessage}")
         }
     }.start()
 }
