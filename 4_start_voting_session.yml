@@ -1,0 +1,514 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe API - Start Voting Session
+  version: 1.0.0
+  description: |
+    This document describes the API endpoints for starting and managing voting sessions in MovieSwipe. It covers creating voting sessions, voting, viewing results, and getting intelligent movie recommendations based on group and individual preferences.
+servers:
+  - url: /api/voting
+    description: Voting session endpoints
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    VotingSession:
+      type: object
+      properties:
+        id:
+          type: string
+        groupId:
+          type: string
+        createdBy:
+          type: string
+        status:
+          type: string
+          enum: [active, completed, cancelled]
+        movieRecommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieRecommendation'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vote'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/VotingResult'
+        settings:
+          $ref: '#/components/schemas/VotingSettings'
+        memberVoteCounts:
+          type: object
+          properties:
+            totalMembers:
+              type: integer
+            votedMembers:
+              type: integer
+            pendingMembers:
+              type: integer
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    MovieRecommendation:
+      type: object
+      properties:
+        movieId:
+          type: string
+        title:
+          type: string
+        year:
+          type: integer
+        genres:
+          type: array
+          items:
+            type: string
+        posterUrl:
+          type: string
+        score:
+          type: number
+        reason:
+          type: string
+    Vote:
+      type: object
+      properties:
+        userId:
+          type: string
+        movieId:
+          type: string
+        vote:
+          type: string
+          enum: [like, dislike, neutral]
+        timestamp:
+          type: string
+          format: date-time
+    VotingResult:
+      type: object
+      properties:
+        movieId:
+          type: string
+        title:
+          type: string
+        year:
+          type: integer
+        genres:
+          type: array
+          items:
+            type: string
+        posterUrl:
+          type: string
+        likeCount:
+          type: integer
+        dislikeCount:
+          type: integer
+        neutralCount:
+          type: integer
+        totalVotes:
+          type: integer
+        score:
+          type: number
+    VotingSettings:
+      type: object
+      properties:
+        maxRecommendations:
+          type: integer
+          default: 10
+        votingDuration:
+          type: integer
+          description: Duration in minutes
+          default: 60
+        requireAllMembers:
+          type: boolean
+          default: true
+    VotingStats:
+      type: object
+      properties:
+        totalMembers:
+          type: integer
+        votedMembers:
+          type: integer
+        pendingMembers:
+          type: integer
+        participationRate:
+          type: number
+        totalVotes:
+          type: integer
+        voteBreakdown:
+          type: object
+          properties:
+            likes:
+              type: integer
+            dislikes:
+              type: integer
+            neutrals:
+              type: integer
+        sessionStatus:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+
+paths:
+  /sessions:
+    post:
+      summary: Create a new voting session
+      description: Start a new voting session for a group. Only the group owner can start a session. Requires all members to have set preferences unless overridden.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                groupId:
+                  type: string
+                settings:
+                  $ref: '#/components/schemas/VotingSettings'
+      responses:
+        '201':
+          description: Voting session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VotingSession'
+                  message:
+                    type: string
+        '400':
+          description: Bad request (missing groupId, not all members set preferences, or no recommendations)
+        '403':
+          description: Forbidden (not group owner)
+        '404':
+          description: Group not found
+        '409':
+          description: Conflict (active session exists)
+        '500':
+          description: Server error
+
+  /sessions/group/{groupId}:
+    get:
+      summary: Get active voting session for a group
+      description: Retrieve the currently active voting session for a group.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Active voting session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VotingSession'
+        '404':
+          description: No active session found
+        '403':
+          description: Access denied
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}:
+    get:
+      summary: Get a specific voting session
+      description: Retrieve details of a voting session by its ID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Voting session details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VotingSession'
+        '404':
+          description: Not found
+        '403':
+          description: Access denied
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/vote:
+    post:
+      summary: Submit a vote
+      description: Submit a vote (like, dislike, neutral) for a movie in a voting session.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                movieId:
+                  type: string
+                vote:
+                  type: string
+                  enum: [like, dislike, neutral]
+      responses:
+        '200':
+          description: Vote submitted
+        '400':
+          description: Bad request (invalid vote or session)
+        '403':
+          description: Forbidden (not a group member)
+        '404':
+          description: Not found
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/votes:
+    get:
+      summary: Get user's votes for a session
+      description: Retrieve all votes submitted by the authenticated user for a voting session.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User's votes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Vote'
+        '404':
+          description: Not found
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/complete:
+    post:
+      summary: Complete voting session
+      description: Complete a voting session and calculate results. Only the session creator can complete it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Voting session completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
+                      results:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/VotingResult'
+                      endedAt:
+                        type: string
+                        format: date-time
+                  message:
+                    type: string
+        '404':
+          description: Not found
+        '403':
+          description: Forbidden (not session creator)
+        '400':
+          description: Already completed or cancelled
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/cancel:
+    post:
+      summary: Cancel voting session
+      description: Cancel a voting session. Only the session creator can cancel it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Voting session cancelled
+        '404':
+          description: Not found
+        '403':
+          description: Forbidden (not session creator)
+        '400':
+          description: Already completed or cancelled
+        '500':
+          description: Server error
+
+  /sessions/group/{groupId}/history:
+    get:
+      summary: Get voting session history for a group
+      description: Retrieve all voting sessions (past and present) for a group.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Voting session history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VotingSession'
+        '403':
+          description: Access denied
+        '500':
+          description: Server error
+
+  /sessions/{sessionId}/stats:
+    get:
+      summary: Get voting statistics
+      description: Retrieve voting statistics for a session, including participation rate and vote breakdown.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Voting statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VotingStats'
+        '404':
+          description: Not found
+        '500':
+          description: Server error
+
+  /recommendations/{groupId}:
+    get:
+      summary: Get movie recommendations for a group
+      description: Get intelligent movie recommendations for a group based on preferences, without starting a voting session.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: maxRecommendations
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Movie recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      groupId:
+                        type: string
+                      recommendations:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MovieRecommendation'
+                      totalRecommendations:
+                        type: integer
+        '400':
+          description: No group members have set preferences yet
+        '500':
+          description: Server error 

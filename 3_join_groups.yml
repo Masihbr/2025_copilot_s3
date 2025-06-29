@@ -1,0 +1,1345 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe Join Groups API
+  description: |
+    Join Groups API for MovieSwipe - A movie recommendation app for groups.
+    
+    This API provides functionality for joining groups using invitation codes and setting
+    movie genre preferences after joining.
+    
+    ## Join Groups Features
+    - Join groups using invitation codes
+    - Set movie genre preferences after joining
+    - Update genre preferences
+    - View group preference statistics
+    - Get available movie genres
+    
+    ## Genre Preferences
+    - Users must select at least 1 genre
+    - Maximum 10 genres can be selected
+    - Preferences are group-specific
+    - Preferences are used for movie recommendations
+    
+    ## Available Genres
+    - Action, Adventure, Animation, Comedy, Crime, Documentary
+    - Drama, Family, Fantasy, Horror, Mystery, Romance
+    - Sci-Fi, Thriller, War, Western, Biography, History
+    - Music, Sport, Superhero, Musical, Film-Noir, Short
+    
+    ## Workflow
+    1. User receives invitation code from group owner
+    2. User joins group using invitation code
+    3. User is prompted to set genre preferences
+    4. Preferences are used for group movie recommendations
+  version: 1.0.0
+  contact:
+    name: MovieSwipe Team
+    email: support@movieswipe.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.movieswipe.com/api
+    description: Production server
+
+tags:
+  - name: Join Groups
+    description: Group joining and invitation code operations
+  - name: Preferences
+    description: Movie genre preference management
+
+paths:
+  /groups/join:
+    post:
+      tags:
+        - Join Groups
+      summary: Join a group using invitation code
+      description: |
+        Joins a group using the provided invitation code.
+        After joining, the user should set their genre preferences.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGroupRequest'
+            example:
+              invitationCode: "A1B2C3D4"
+      responses:
+        '200':
+          description: Successfully joined the group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinGroupResponse'
+              example:
+                success: true
+                data:
+                  id: "507f1f77bcf86cd799439011"
+                  name: "Movie Night Crew"
+                  description: "Weekly movie watching group with friends"
+                  invitationCode: "A1B2C3D4"
+                  isActive: true
+                  createdAt: "2024-01-15T10:30:00.000Z"
+                  updatedAt: "2024-01-15T10:30:00.000Z"
+                message: "Successfully joined the group"
+        '400':
+          description: Bad request - Invalid invitation code or already a member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /groups:
+    get:
+      tags:
+        - Join Groups
+      summary: Get user's groups with preference status
+      description: |
+        Retrieves all groups that the authenticated user is a member of,
+        including information about whether they have set genre preferences.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User's groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserGroupsWithPreferencesResponse'
+              example:
+                success: true
+                data:
+                  - id: "507f1f77bcf86cd799439011"
+                    name: "Movie Night Crew"
+                    description: "Weekly movie watching group with friends"
+                    owner:
+                      id: "507f1f77bcf86cd799439012"
+                      name: "John Doe"
+                      email: "john@example.com"
+                      picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                    members:
+                      - id: "507f1f77bcf86cd799439012"
+                        name: "John Doe"
+                        email: "john@example.com"
+                        picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                      - id: "507f1f77bcf86cd799439013"
+                        name: "Jane Smith"
+                        email: "jane@example.com"
+                        picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                    invitationCode: "A1B2C3D4"
+                    isActive: true
+                    hasPreferences: false
+                    memberCount: 2
+                    createdAt: "2024-01-15T10:30:00.000Z"
+                    updatedAt: "2024-01-15T10:30:00.000Z"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /groups/{groupId}:
+    get:
+      tags:
+        - Join Groups
+      summary: Get specific group with preference status
+      description: |
+        Retrieves detailed information about a specific group,
+        including whether the user has set genre preferences.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          description: Group ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: Group details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupWithPreferenceStatusResponse'
+              example:
+                success: true
+                data:
+                  id: "507f1f77bcf86cd799439011"
+                  name: "Movie Night Crew"
+                  description: "Weekly movie watching group with friends"
+                  owner:
+                    id: "507f1f77bcf86cd799439012"
+                    name: "John Doe"
+                    email: "john@example.com"
+                    picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                  members:
+                    - id: "507f1f77bcf86cd799439012"
+                      name: "John Doe"
+                      email: "john@example.com"
+                      picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                    - id: "507f1f77bcf86cd799439013"
+                      name: "Jane Smith"
+                      email: "jane@example.com"
+                      picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                  invitationCode: "A1B2C3D4"
+                  isActive: true
+                  hasPreferences: false
+                  memberCount: 2
+                  createdAt: "2024-01-15T10:30:00.000Z"
+                  updatedAt: "2024-01-15T10:30:00.000Z"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Group not found or access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /preferences/genres:
+    get:
+      tags:
+        - Preferences
+      summary: Get available movie genres
+      description: |
+        Retrieves the list of available movie genres that users can select from
+        when setting their preferences.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Available genres retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableGenresResponse'
+              example:
+                success: true
+                data:
+                  genres:
+                    - "Action"
+                    - "Adventure"
+                    - "Animation"
+                    - "Comedy"
+                    - "Crime"
+                    - "Documentary"
+                    - "Drama"
+                    - "Family"
+                    - "Fantasy"
+                    - "Horror"
+                    - "Mystery"
+                    - "Romance"
+                    - "Sci-Fi"
+                    - "Thriller"
+                    - "War"
+                    - "Western"
+                    - "Biography"
+                    - "History"
+                    - "Music"
+                    - "Sport"
+                    - "Superhero"
+                    - "Musical"
+                    - "Film-Noir"
+                    - "Short"
+                  totalGenres: 24
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /preferences/{groupId}:
+    post:
+      tags:
+        - Preferences
+      summary: Set genre preferences for a group
+      description: |
+        Sets the user's movie genre preferences for a specific group.
+        This should be called after joining a group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          description: Group ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePreferencesRequest'
+            example:
+              genres:
+                - "Action"
+                - "Comedy"
+                - "Drama"
+                - "Sci-Fi"
+      responses:
+        '201':
+          description: Genre preferences created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+              example:
+                success: true
+                data:
+                  id: "507f1f77bcf86cd799439014"
+                  userId: "507f1f77bcf86cd799439013"
+                  groupId: "507f1f77bcf86cd799439011"
+                  genres:
+                    - "Action"
+                    - "Comedy"
+                    - "Drama"
+                    - "Sci-Fi"
+                  createdAt: "2024-01-15T11:00:00.000Z"
+                  updatedAt: "2024-01-15T11:00:00.000Z"
+                message: "Genre preferences saved successfully"
+        '400':
+          description: Bad request - Invalid genres or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - User not a member of the group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict - Preferences already exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Preferences
+      summary: Update genre preferences for a group
+      description: |
+        Updates the user's existing movie genre preferences for a specific group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          description: Group ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePreferencesRequest'
+            example:
+              genres:
+                - "Action"
+                - "Comedy"
+                - "Drama"
+                - "Sci-Fi"
+                - "Thriller"
+      responses:
+        '200':
+          description: Genre preferences updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+              example:
+                success: true
+                data:
+                  id: "507f1f77bcf86cd799439014"
+                  userId: "507f1f77bcf86cd799439013"
+                  groupId: "507f1f77bcf86cd799439011"
+                  genres:
+                    - "Action"
+                    - "Comedy"
+                    - "Drama"
+                    - "Sci-Fi"
+                    - "Thriller"
+                  createdAt: "2024-01-15T11:00:00.000Z"
+                  updatedAt: "2024-01-15T11:30:00.000Z"
+                message: "Genre preferences updated successfully"
+        '400':
+          description: Bad request - Invalid genres
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Preferences not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags:
+        - Preferences
+      summary: Get user preferences for a group
+      description: |
+        Retrieves the user's genre preferences for a specific group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          description: Group ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: User preferences retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+              example:
+                success: true
+                data:
+                  id: "507f1f77bcf86cd799439014"
+                  userId: "507f1f77bcf86cd799439013"
+                  groupId: "507f1f77bcf86cd799439011"
+                  genres:
+                    - "Action"
+                    - "Comedy"
+                    - "Drama"
+                    - "Sci-Fi"
+                  createdAt: "2024-01-15T11:00:00.000Z"
+                  updatedAt: "2024-01-15T11:00:00.000Z"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Preferences not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Preferences
+      summary: Delete user preferences for a group
+      description: |
+        Deletes the user's genre preferences for a specific group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          description: Group ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: Preferences deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletePreferencesResponse'
+              example:
+                success: true
+                message: "Preferences deleted successfully"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Preferences not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /preferences:
+    get:
+      tags:
+        - Preferences
+      summary: Get all user preferences
+      description: |
+        Retrieves all genre preferences for the authenticated user across all groups.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: All user preferences retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllPreferencesResponse'
+              example:
+                success: true
+                data:
+                  - id: "507f1f77bcf86cd799439014"
+                    userId: "507f1f77bcf86cd799439013"
+                    groupId: "507f1f77bcf86cd799439011"
+                    group:
+                      id: "507f1f77bcf86cd799439011"
+                      name: "Movie Night Crew"
+                      description: "Weekly movie watching group with friends"
+                    genres:
+                      - "Action"
+                      - "Comedy"
+                      - "Drama"
+                      - "Sci-Fi"
+                    createdAt: "2024-01-15T11:00:00.000Z"
+                    updatedAt: "2024-01-15T11:00:00.000Z"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /preferences/{groupId}/check:
+    get:
+      tags:
+        - Preferences
+      summary: Check if user has preferences for a group
+      description: |
+        Checks whether the user has set genre preferences for a specific group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          description: Group ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: Preference status checked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferenceCheckResponse'
+              example:
+                success: true
+                data:
+                  hasPreferences: true
+                  groupId: "507f1f77bcf86cd799439011"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /preferences/{groupId}/stats:
+    get:
+      tags:
+        - Preferences
+      summary: Get group genre statistics
+      description: |
+        Retrieves genre preference statistics for a specific group,
+        including most popular genres and percentages.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          description: Group ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: Group genre statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupGenreStatsResponse'
+              example:
+                success: true
+                data:
+                  totalUsers: 5
+                  genreStats:
+                    - genre: "Action"
+                      count: 4
+                      percentage: 80
+                    - genre: "Comedy"
+                      count: 3
+                      percentage: 60
+                    - genre: "Drama"
+                      count: 3
+                      percentage: 60
+                    - genre: "Sci-Fi"
+                      count: 2
+                      percentage: 40
+                    - genre: "Thriller"
+                      count: 2
+                      percentage: 40
+                  mostPopularGenres:
+                    - "Action"
+                    - "Comedy"
+                    - "Drama"
+                    - "Sci-Fi"
+                    - "Thriller"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from Google OAuth authentication.
+        Include the token in the Authorization header as "Bearer <token>".
+
+  schemas:
+    JoinGroupRequest:
+      type: object
+      properties:
+        invitationCode:
+          type: string
+          description: Group invitation code
+          minLength: 1
+          example: "A1B2C3D4"
+      required:
+        - invitationCode
+
+    JoinGroupResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Group'
+        message:
+          type: string
+          example: "Successfully joined the group"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User's unique identifier
+          example: "507f1f77bcf86cd799439012"
+        name:
+          type: string
+          description: User's display name
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: "john@example.com"
+        picture:
+          type: string
+          format: uri
+          description: User's profile picture URL
+          example: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Group's unique identifier
+          example: "507f1f77bcf86cd799439011"
+        name:
+          type: string
+          description: Group name
+          example: "Movie Night Crew"
+        description:
+          type: string
+          description: Group description
+          example: "Weekly movie watching group with friends"
+        invitationCode:
+          type: string
+          description: Group invitation code
+          example: "A1B2C3D4"
+        isActive:
+          type: boolean
+          description: Whether the group is active
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Group creation timestamp
+          example: "2024-01-15T10:30:00.000Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2024-01-15T10:30:00.000Z"
+
+    GroupWithMembers:
+      allOf:
+        - $ref: '#/components/schemas/Group'
+        - type: object
+          properties:
+            owner:
+              $ref: '#/components/schemas/User'
+            members:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+              description: Group members
+
+    GroupWithPreferenceStatus:
+      allOf:
+        - $ref: '#/components/schemas/GroupWithMembers'
+        - type: object
+          properties:
+            hasPreferences:
+              type: boolean
+              description: Whether the user has set preferences for this group
+              example: false
+            memberCount:
+              type: integer
+              description: Number of group members
+              example: 2
+
+    UserGroupsWithPreferencesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupWithPreferenceStatus'
+
+    GroupWithPreferenceStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/GroupWithPreferenceStatus'
+
+    AvailableGenresResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            genres:
+              type: array
+              items:
+                type: string
+              description: List of available genres
+              example:
+                - "Action"
+                - "Adventure"
+                - "Animation"
+                - "Comedy"
+                - "Crime"
+                - "Documentary"
+                - "Drama"
+                - "Family"
+                - "Fantasy"
+                - "Horror"
+                - "Mystery"
+                - "Romance"
+                - "Sci-Fi"
+                - "Thriller"
+                - "War"
+                - "Western"
+                - "Biography"
+                - "History"
+                - "Music"
+                - "Sport"
+                - "Superhero"
+                - "Musical"
+                - "Film-Noir"
+                - "Short"
+            totalGenres:
+              type: integer
+              description: Total number of available genres
+              example: 24
+
+    CreatePreferencesRequest:
+      type: object
+      properties:
+        genres:
+          type: array
+          items:
+            type: string
+            enum:
+              - "Action"
+              - "Adventure"
+              - "Animation"
+              - "Comedy"
+              - "Crime"
+              - "Documentary"
+              - "Drama"
+              - "Family"
+              - "Fantasy"
+              - "Horror"
+              - "Mystery"
+              - "Romance"
+              - "Sci-Fi"
+              - "Thriller"
+              - "War"
+              - "Western"
+              - "Biography"
+              - "History"
+              - "Music"
+              - "Sport"
+              - "Superhero"
+              - "Musical"
+              - "Film-Noir"
+              - "Short"
+          minItems: 1
+          maxItems: 10
+          description: Selected movie genres
+          example:
+            - "Action"
+            - "Comedy"
+            - "Drama"
+            - "Sci-Fi"
+      required:
+        - genres
+
+    UpdatePreferencesRequest:
+      type: object
+      properties:
+        genres:
+          type: array
+          items:
+            type: string
+            enum:
+              - "Action"
+              - "Adventure"
+              - "Animation"
+              - "Comedy"
+              - "Crime"
+              - "Documentary"
+              - "Drama"
+              - "Family"
+              - "Fantasy"
+              - "Horror"
+              - "Mystery"
+              - "Romance"
+              - "Sci-Fi"
+              - "Thriller"
+              - "War"
+              - "Western"
+              - "Biography"
+              - "History"
+              - "Music"
+              - "Sport"
+              - "Superhero"
+              - "Musical"
+              - "Film-Noir"
+              - "Short"
+          minItems: 1
+          maxItems: 10
+          description: Updated movie genres
+          example:
+            - "Action"
+            - "Comedy"
+            - "Drama"
+            - "Sci-Fi"
+            - "Thriller"
+      required:
+        - genres
+
+    PreferencesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              description: Preference record ID
+              example: "507f1f77bcf86cd799439014"
+            userId:
+              type: string
+              description: User ID
+              example: "507f1f77bcf86cd799439013"
+            groupId:
+              type: string
+              description: Group ID
+              example: "507f1f77bcf86cd799439011"
+            genres:
+              type: array
+              items:
+                type: string
+              description: Selected genres
+              example:
+                - "Action"
+                - "Comedy"
+                - "Drama"
+                - "Sci-Fi"
+            createdAt:
+              type: string
+              format: date-time
+              description: Creation timestamp
+              example: "2024-01-15T11:00:00.000Z"
+            updatedAt:
+              type: string
+              format: date-time
+              description: Last update timestamp
+              example: "2024-01-15T11:00:00.000Z"
+        message:
+          type: string
+          description: Success message
+          example: "Genre preferences saved successfully"
+
+    AllPreferencesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: Preference record ID
+                example: "507f1f77bcf86cd799439014"
+              userId:
+                type: string
+                description: User ID
+                example: "507f1f77bcf86cd799439013"
+              groupId:
+                type: string
+                description: Group ID
+                example: "507f1f77bcf86cd799439011"
+              group:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Group ID
+                    example: "507f1f77bcf86cd799439011"
+                  name:
+                    type: string
+                    description: Group name
+                    example: "Movie Night Crew"
+                  description:
+                    type: string
+                    description: Group description
+                    example: "Weekly movie watching group with friends"
+              genres:
+                type: array
+                items:
+                  type: string
+                description: Selected genres
+                example:
+                  - "Action"
+                  - "Comedy"
+                  - "Drama"
+                  - "Sci-Fi"
+              createdAt:
+                type: string
+                format: date-time
+                description: Creation timestamp
+                example: "2024-01-15T11:00:00.000Z"
+              updatedAt:
+                type: string
+                format: date-time
+                description: Last update timestamp
+                example: "2024-01-15T11:00:00.000Z"
+
+    DeletePreferencesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          description: Success message
+          example: "Preferences deleted successfully"
+
+    PreferenceCheckResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            hasPreferences:
+              type: boolean
+              description: Whether user has set preferences
+              example: true
+            groupId:
+              type: string
+              description: Group ID
+              example: "507f1f77bcf86cd799439011"
+
+    GroupGenreStatsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            totalUsers:
+              type: integer
+              description: Total number of users with preferences
+              example: 5
+            genreStats:
+              type: array
+              items:
+                type: object
+                properties:
+                  genre:
+                    type: string
+                    description: Genre name
+                    example: "Action"
+                  count:
+                    type: integer
+                    description: Number of users who selected this genre
+                    example: 4
+                  percentage:
+                    type: integer
+                    description: Percentage of users who selected this genre
+                    example: 80
+              description: Statistics for each genre
+            mostPopularGenres:
+              type: array
+              items:
+                type: string
+              description: Top 5 most popular genres
+              example:
+                - "Action"
+                - "Comedy"
+                - "Drama"
+                - "Sci-Fi"
+                - "Thriller"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message
+          example: "Invalid invitation code"
+        details:
+          type: object
+          description: Additional error details (optional)
+          additionalProperties: true
+      required:
+        - success
+        - error
+
+  examples:
+    JoinGroupWorkflow:
+      summary: Complete join group workflow
+      description: |
+        This example demonstrates the complete workflow from joining a group
+        to setting genre preferences.
+      value:
+        step1:
+          description: "Join a group using invitation code"
+          request:
+            method: POST
+            url: "http://localhost:3000/api/groups/join"
+            headers:
+              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            body:
+              invitationCode: "A1B2C3D4"
+          response:
+            status: 200
+            body:
+              success: true
+              data:
+                id: "507f1f77bcf86cd799439011"
+                name: "Movie Night Crew"
+                description: "Weekly movie watching group with friends"
+                invitationCode: "A1B2C3D4"
+                isActive: true
+                createdAt: "2024-01-15T10:30:00.000Z"
+                updatedAt: "2024-01-15T10:30:00.000Z"
+              message: "Successfully joined the group"
+        
+        step2:
+          description: "Get available genres"
+          request:
+            method: GET
+            url: "http://localhost:3000/api/preferences/genres"
+            headers:
+              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          response:
+            status: 200
+            body:
+              success: true
+              data:
+                genres:
+                  - "Action"
+                  - "Adventure"
+                  - "Animation"
+                  - "Comedy"
+                  - "Crime"
+                  - "Documentary"
+                  - "Drama"
+                  - "Family"
+                  - "Fantasy"
+                  - "Horror"
+                  - "Mystery"
+                  - "Romance"
+                  - "Sci-Fi"
+                  - "Thriller"
+                  - "War"
+                  - "Western"
+                  - "Biography"
+                  - "History"
+                  - "Music"
+                  - "Sport"
+                  - "Superhero"
+                  - "Musical"
+                  - "Film-Noir"
+                  - "Short"
+                totalGenres: 24
+        
+        step3:
+          description: "Set genre preferences for the group"
+          request:
+            method: POST
+            url: "http://localhost:3000/api/preferences/507f1f77bcf86cd799439011"
+            headers:
+              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            body:
+              genres:
+                - "Action"
+                - "Comedy"
+                - "Drama"
+                - "Sci-Fi"
+          response:
+            status: 201
+            body:
+              success: true
+              data:
+                id: "507f1f77bcf86cd799439014"
+                userId: "507f1f77bcf86cd799439013"
+                groupId: "507f1f77bcf86cd799439011"
+                genres:
+                  - "Action"
+                  - "Comedy"
+                  - "Drama"
+                  - "Sci-Fi"
+                createdAt: "2024-01-15T11:00:00.000Z"
+                updatedAt: "2024-01-15T11:00:00.000Z"
+              message: "Genre preferences saved successfully"
+
+    ErrorResponses:
+      InvalidInvitationCode:
+        summary: Invalid invitation code
+        value:
+          status: 400
+          body:
+            success: false
+            error: "Invalid invitation code"
+      
+      AlreadyMember:
+        summary: User already a member
+        value:
+          status: 400
+          body:
+            success: false
+            error: "You are already a member of this group"
+      
+      MaxGroupsReached:
+        summary: Maximum groups reached
+        value:
+          status: 400
+          body:
+            success: false
+            error: "You are already in the maximum number of groups (10)"
+      
+      InvalidGenres:
+        summary: Invalid genre selection
+        value:
+          status: 400
+          body:
+            success: false
+            error: "At least one genre must be selected"
+      
+      TooManyGenres:
+        summary: Too many genres selected
+        value:
+          status: 400
+          body:
+            success: false
+            error: "Maximum 10 genres can be selected"
+      
+      InvalidGenre:
+        summary: Invalid genre name
+        value:
+          status: 400
+          body:
+            success: false
+            error: "Invalid genre: Horror"
+      
+      NotGroupMember:
+        summary: User not a group member
+        value:
+          status: 403
+          body:
+            success: false
+            error: "You must be a member of this group to set preferences"
+      
+      PreferencesAlreadyExist:
+        summary: Preferences already exist
+        value:
+          status: 409
+          body:
+            success: false
+            error: "Preferences already exist for this group. Use PUT to update."
+      
+      PreferencesNotFound:
+        summary: Preferences not found
+        value:
+          status: 404
+          body:
+            success: false
+            error: "Preferences not found for this group" 

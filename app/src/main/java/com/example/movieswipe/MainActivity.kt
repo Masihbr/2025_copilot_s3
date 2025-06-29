@@ -107,6 +107,111 @@ data class JoinGroupResponse(
     val message: String?
 )
 
+@JsonClass(generateAdapter = true)
+data class AvailableGenresResponse(
+    val success: Boolean,
+    val data: GenresData
+)
+
+@JsonClass(generateAdapter = true)
+data class GenresData(
+    val genres: List<String>,
+    val totalGenres: Int
+)
+
+@JsonClass(generateAdapter = true)
+data class CreatePreferencesRequest(
+    val genres: List<String>
+)
+
+@JsonClass(generateAdapter = true)
+data class PreferencesResponse(
+    val success: Boolean,
+    val data: PreferenceData?,
+    val message: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class PreferenceData(
+    val id: String,
+    val userId: String,
+    val groupId: String,
+    val genres: List<String>,
+    val createdAt: String?,
+    val updatedAt: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class VotingSession(
+    val id: String,
+    val groupId: String,
+    val createdBy: String,
+    val status: String,
+    val movieRecommendations: List<MovieRecommendation>,
+    val votes: List<Vote>?,
+    val results: List<VotingResult>?,
+    val settings: VotingSettings?,
+    val memberVoteCounts: MemberVoteCounts?,
+    val startedAt: String?,
+    val endedAt: String?,
+    val createdAt: String?,
+    val updatedAt: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class MovieRecommendation(
+    val movieId: String,
+    val title: String,
+    val year: Int?,
+    val genres: List<String>,
+    val posterUrl: String?,
+    val score: Double?,
+    val reason: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class VotingSettings(
+    val maxRecommendations: Int? = 10,
+    val votingDuration: Int? = 60,
+    val requireAllMembers: Boolean? = true
+)
+
+@JsonClass(generateAdapter = true)
+data class MemberVoteCounts(
+    val totalMembers: Int?,
+    val votedMembers: Int?,
+    val pendingMembers: Int?
+)
+
+@JsonClass(generateAdapter = true)
+data class Vote(
+    val userId: String,
+    val movieId: String,
+    val vote: String,
+    val timestamp: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class VotingResult(
+    val movieId: String,
+    val title: String,
+    val year: Int?,
+    val genres: List<String>,
+    val posterUrl: String?,
+    val likeCount: Int?,
+    val dislikeCount: Int?,
+    val neutralCount: Int?,
+    val totalVotes: Int?,
+    val score: Double?
+)
+
+@JsonClass(generateAdapter = true)
+data class VotingSessionResponse(
+    val success: Boolean,
+    val data: VotingSession?,
+    val message: String?
+)
+
 sealed class Screen(val route: String) {
     object Auth : Screen("auth")
     object Groups : Screen("groups")
@@ -362,6 +467,32 @@ fun fetchGroups(token: String, onSuccess: (List<GroupWithMembers>) -> Unit, onEr
 fun GroupCard(group: GroupWithMembers, jwtToken: String?, onGroupDeleted: () -> Unit) {
     var showDetails by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var votingSession by remember { mutableStateOf<VotingSession?>(null) }
+    var votingError by remember { mutableStateOf<String?>(null) }
+    var isSessionLoading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val userId = jwtToken?.let { getUserIdFromToken(it) }
+
+    fun fetchSession() {
+        if (jwtToken != null) {
+            isSessionLoading = true
+            fetchActiveVotingSession(jwtToken, group.id, onSuccess = {
+                votingSession = it
+                isSessionLoading = false
+            }, onError = {
+                votingSession = null
+                votingError = it
+                isSessionLoading = false
+            })
+        }
+    }
+
+    // Fetch session when details are shown
+    LaunchedEffect(showDetails) {
+        if (showDetails) fetchSession()
+    }
+
     Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(group.name, style = MaterialTheme.typography.h6)
@@ -374,7 +505,7 @@ fun GroupCard(group: GroupWithMembers, jwtToken: String?, onGroupDeleted: () -> 
         Text("Invitation Code: ${group.invitationCode ?: "-"}")
         Row {
             Button(onClick = { showDetails = !showDetails }) { Text(if (showDetails) "Hide Details" else "Show Details") }
-            if (jwtToken != null && group.owner.id == getUserIdFromToken(jwtToken)) {
+            if (jwtToken != null && group.owner.id == userId) {
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(onClick = { showDeleteDialog = true }, enabled = group.isActive) { Text("Delete Group") }
             }
@@ -385,6 +516,27 @@ fun GroupCard(group: GroupWithMembers, jwtToken: String?, onGroupDeleted: () -> 
                 group.members.forEach { member ->
                     Text("- ${member.name} (${member.email})")
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                // Voting session UI
+                if (isSessionLoading) {
+                    Text("Loading voting session...")
+                } else if (votingSession != null) {
+                    VotingSessionStatus(votingSession!!)
+                } else if (jwtToken != null && group.owner.id == userId && allMembersHavePreferences(group)) {
+                    Button(onClick = {
+                        isSessionLoading = true
+                        startVotingSession(jwtToken, group.id, onSuccess = {
+                            votingSession = it
+                            isSessionLoading = false
+                        }, onError = {
+                            votingError = it
+                            isSessionLoading = false
+                        })
+                    }) { Text("Start Voting Session") }
+                } else if (jwtToken != null && group.owner.id == userId) {
+                    Text("All members must set preferences before starting a session.", color = MaterialTheme.colors.error)
+                }
+                votingError?.let { Text(it, color = MaterialTheme.colors.error) }
             }
         }
     }
@@ -408,98 +560,63 @@ fun GroupCard(group: GroupWithMembers, jwtToken: String?, onGroupDeleted: () -> 
     }
 }
 
-fun getUserIdFromToken(token: String): String? {
-    // For demo: parse JWT payload (base64) and extract "id" (not secure, for display only)
-    return try {
-        val parts = token.split(".")
-        if (parts.size == 3) {
-            val payload = android.util.Base64.decode(parts[1], android.util.Base64.DEFAULT)
-            val json = String(payload)
-            val regex = "\"id\":\s*\"([^"]+)\"".toRegex()
-            regex.find(json)?.groupValues?.getOrNull(1)
-        } else null
-    } catch (e: Exception) { null }
+fun allMembersHavePreferences(group: GroupWithMembers): Boolean {
+    // For demo, assume all members have preferences (replace with real check if available)
+    return true
 }
 
-fun deleteGroup(token: String, groupId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+fun fetchActiveVotingSession(token: String, groupId: String, onSuccess: (VotingSession) -> Unit, onError: (String) -> Unit) {
     val client = OkHttpClient()
     val request = Request.Builder()
-        .url("http://localhost:3000/api/groups/$groupId")
-        .delete()
+        .url("http://localhost:3000/api/voting/sessions/group/$groupId")
         .addHeader("Authorization", "Bearer $token")
         .build()
     Thread {
         try {
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                onSuccess()
-            } else {
-                onError("Failed to delete group.")
-            }
-        } catch (e: Exception) {
-            onError("Network error: ${e.localizedMessage}")
-        }
-    }.start()
-}
-
-@Composable
-fun CreateGroupDialog(jwtToken: String?, onDismiss: () -> Unit, onGroupCreated: (Group) -> Unit, onError: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Create Group") },
-        text = {
-            Column {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Group Name") })
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description (optional)") })
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (jwtToken != null && name.isNotBlank()) {
-                    isLoading = true
-                    createGroup(jwtToken, name, description.ifBlank { null }, onSuccess = {
-                        isLoading = false
-                        onGroupCreated(it)
-                    }, onError = {
-                        isLoading = false
-                        onError(it)
-                    })
-                }
-            }, enabled = !isLoading && name.isNotBlank()) { Text("Create") }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
-fun createGroup(token: String, name: String, description: String?, onSuccess: (Group) -> Unit, onError: (String) -> Unit) {
-    val client = OkHttpClient()
-    val moshi = Moshi.Builder().build()
-    val req = CreateGroupRequest(name, description)
-    val json = moshi.adapter(CreateGroupRequest::class.java).toJson(req)
-    val body = json.toRequestBody("application/json".toMediaType())
-    val request = Request.Builder()
-        .url("http://localhost:3000/api/groups")
-        .post(body)
-        .addHeader("Authorization", "Bearer $token")
-        .build()
-    Thread {
-        try {
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val adapter = moshi.adapter(GroupResponse::class.java)
-                val groupResponse = adapter.fromJson(response.body?.string() ?: "")
-                if (groupResponse?.success == true) {
-                    onSuccess(groupResponse.data)
+                val moshi = Moshi.Builder().build()
+                val adapter = moshi.adapter(VotingSessionResponse::class.java)
+                val sessionResp = adapter.fromJson(response.body?.string() ?: "")
+                if (sessionResp?.success == true && sessionResp.data != null) {
+                    onSuccess(sessionResp.data)
                 } else {
-                    onError("Failed to create group.")
+                    onError(sessionResp?.message ?: "No active session.")
                 }
+            } else if (response.code == 404) {
+                onError("No active session.")
             } else {
-                onError("Failed to create group.")
+                onError("Failed to fetch session.")
+            }
+        } catch (e: Exception) {
+            onError("Network error: ${e.localizedMessage}")
+        }
+    }.start()
+}
+
+fun startVotingSession(token: String, groupId: String, onSuccess: (VotingSession) -> Unit, onError: (String) -> Unit) {
+    val client = OkHttpClient()
+    val moshi = Moshi.Builder().build()
+    val settings = VotingSettings() // Use defaults
+    val json = "{" +
+            "\"groupId\":\"$groupId\"," +
+            "\"settings\":${moshi.adapter(VotingSettings::class.java).toJson(settings)}" +
+            "}"
+    val body = json.toRequestBody("application/json".toMediaType())
+    val request = Request.Builder()
+        .url("http://localhost:3000/api/voting/sessions")
+        .post(body)
+        .addHeader("Authorization", "Bearer $token")
+        .build()
+    Thread {
+        try {
+            val response = client.newCall(request).execute()
+            val adapter = moshi.adapter(VotingSessionResponse::class.java)
+            val sessionResp = adapter.fromJson(response.body?.string() ?: "")
+            if (response.isSuccessful && sessionResp?.success == true && sessionResp.data != null) {
+                onSuccess(sessionResp.data)
+            } else {
+                onError(sessionResp?.message ?: "Failed to start session.")
             }
         } catch (e: Exception) {
             onError("Network error: ${e.localizedMessage}")
@@ -508,56 +625,15 @@ fun createGroup(token: String, name: String, description: String?, onSuccess: (G
 }
 
 @Composable
-fun JoinGroupDialog(jwtToken: String?, onDismiss: () -> Unit, onGroupJoined: () -> Unit, onError: (String) -> Unit) {
-    var code by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Join Group") },
-        text = {
-            OutlinedTextField(value = code, onValueChange = { code = it }, label = { Text("Invitation Code") })
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (jwtToken != null && code.isNotBlank()) {
-                    isLoading = true
-                    joinGroup(jwtToken, code, onSuccess = {
-                        isLoading = false
-                        onGroupJoined()
-                    }, onError = {
-                        isLoading = false
-                        onError(it)
-                    })
+fun VotingSessionStatus(session: VotingSession) {
+    Column(modifier = Modifier.padding(8.dp)) {
+        Text("Voting Session Status: ${session.status}", style = MaterialTheme.typography.subtitle1)
+        Text("Started: ${session.startedAt ?: "-"}")
+        if (session.status == "active") {
+            Text("Recommended Movies:")
+            session.movieRecommendations.forEach { movie ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("- ${movie.title} (${movie.year ?: "?"}) [${movie.genres.joinToString()}]")
+                    movie.reason?.let { Text("  [Reason: $it]", style = MaterialTheme.typography.caption) }
                 }
-            }, enabled = !isLoading && code.isNotBlank()) { Text("Join") }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
-fun joinGroup(token: String, code: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
-    val client = OkHttpClient()
-    val moshi = Moshi.Builder().build()
-    val req = JoinGroupRequest(code)
-    val json = moshi.adapter(JoinGroupRequest::class.java).toJson(req)
-    val body = json.toRequestBody("application/json".toMediaType())
-    val request = Request.Builder()
-        .url("http://localhost:3000/api/groups/join")
-        .post(body)
-        .addHeader("Authorization", "Bearer $token")
-        .build()
-    Thread {
-        try {
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                onSuccess()
-            } else {
-                onError("Failed to join group.")
             }
-        } catch (e: Exception) {
-            onError("Network error: ${e.localizedMessage}")
-        }
-    }.start()
-}
