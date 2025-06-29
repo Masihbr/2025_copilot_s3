@@ -1,0 +1,502 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe Authentication API
+  description: |
+    Authentication API for MovieSwipe - A movie recommendation app for groups.
+    
+    This API provides Google OAuth authentication, JWT token management, and user profile operations.
+    
+    ## Authentication Flow
+    1. User clicks "Sign in with Google" on frontend
+    2. Frontend redirects to `/api/auth/google`
+    3. User authenticates with Google
+    4. Google redirects to `/api/auth/google/callback`
+    5. Backend generates JWT token and redirects to frontend with token
+    6. Frontend stores token and uses it for authenticated requests
+    
+    ## Token Usage
+    Include the JWT token in the Authorization header for protected endpoints:
+    ```
+    Authorization: Bearer <your-jwt-token>
+    ```
+  version: 1.0.0
+  contact:
+    name: MovieSwipe Team
+    email: support@movieswipe.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.movieswipe.com/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: Google OAuth and JWT token management
+  - name: Users
+    description: User profile and management operations
+
+paths:
+  /auth/google:
+    get:
+      tags:
+        - Authentication
+      summary: Initiate Google OAuth login
+      description: |
+        Redirects the user to Google's OAuth consent screen.
+        This endpoint should be called when the user clicks "Sign in with Google".
+      responses:
+        '302':
+          description: Redirect to Google OAuth
+          headers:
+            Location:
+              description: Google OAuth URL
+              schema:
+                type: string
+                example: https://accounts.google.com/o/oauth2/auth?client_id=...
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/google/callback:
+    get:
+      tags:
+        - Authentication
+      summary: Google OAuth callback
+      description: |
+        Handles the callback from Google OAuth after successful authentication.
+        Generates a JWT token and redirects to the frontend with the token.
+      parameters:
+        - name: code
+          in: query
+          description: Authorization code from Google
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          description: State parameter for CSRF protection
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to frontend with JWT token
+          headers:
+            Location:
+              description: Frontend callback URL with token
+              schema:
+                type: string
+                example: http://localhost:3001/auth/callback?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/me:
+    get:
+      tags:
+        - Users
+      summary: Get current user profile
+      description: |
+        Retrieves the profile information of the currently authenticated user.
+        Requires a valid JWT token in the Authorization header.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+              example:
+                success: true
+                data:
+                  id: "507f1f77bcf86cd799439011"
+                  email: "john.doe@example.com"
+                  name: "John Doe"
+                  picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                  isActive: true
+                  createdAt: "2024-01-15T10:30:00.000Z"
+                  updatedAt: "2024-01-15T10:30:00.000Z"
+        '401':
+          description: Unauthorized - Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh JWT token
+      description: |
+        Generates a new JWT token for the currently authenticated user.
+        Useful for extending the session without requiring re-authentication.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefreshResponse'
+              example:
+                success: true
+                data:
+                  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  user:
+                    id: "507f1f77bcf86cd799439011"
+                    email: "john.doe@example.com"
+                    name: "John Doe"
+                    picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                    isActive: true
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout user
+      description: |
+        Logs out the currently authenticated user.
+        Note: This is a client-side logout - the JWT token should be removed from client storage.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+              example:
+                success: true
+                message: "Logged out successfully"
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/validate:
+    get:
+      tags:
+        - Authentication
+      summary: Validate JWT token
+      description: |
+        Validates the provided JWT token and returns user information if valid.
+        Useful for checking if a token is still valid and getting user details.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenValidationResponse'
+              example:
+                success: true
+                data:
+                  valid: true
+                  user:
+                    id: "507f1f77bcf86cd799439011"
+                    email: "john.doe@example.com"
+                    name: "John Doe"
+                    picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                    isActive: true
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/user/{userId}:
+    get:
+      tags:
+        - Users
+      summary: Get user by ID
+      description: |
+        Retrieves user information by user ID.
+        Requires authentication and is typically used for internal operations.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{24}$'
+            example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: User retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: Unauthorized - Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from Google OAuth authentication.
+        Include the token in the Authorization header as "Bearer <token>".
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User's unique identifier
+          example: "507f1f77bcf86cd799439011"
+        googleId:
+          type: string
+          description: Google OAuth ID
+          example: "123456789012345678901"
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: "john.doe@example.com"
+        name:
+          type: string
+          description: User's display name
+          example: "John Doe"
+        picture:
+          type: string
+          format: uri
+          description: User's profile picture URL
+          example: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+        isActive:
+          type: boolean
+          description: Whether the user account is active
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+          example: "2024-01-15T10:30:00.000Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2024-01-15T10:30:00.000Z"
+      required:
+        - id
+        - googleId
+        - email
+        - name
+        - isActive
+        - createdAt
+        - updatedAt
+
+    UserProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/User'
+
+    TokenRefreshResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+              description: New JWT token
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            user:
+              $ref: '#/components/schemas/User'
+
+    TokenValidationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            valid:
+              type: boolean
+              description: Whether the token is valid
+              example: true
+            user:
+              $ref: '#/components/schemas/User'
+
+    LogoutResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Logged out successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message
+          example: "Invalid token"
+        details:
+          type: object
+          description: Additional error details (optional)
+          additionalProperties: true
+      required:
+        - success
+        - error
+
+  examples:
+    GoogleOAuthFlow:
+      summary: Complete Google OAuth authentication flow
+      description: |
+        This example demonstrates the complete flow from initiating Google OAuth
+        to receiving a JWT token for authenticated API access.
+      value:
+        step1:
+          description: "User clicks 'Sign in with Google' on frontend"
+          request:
+            method: GET
+            url: "http://localhost:3000/api/auth/google"
+          response:
+            status: 302
+            headers:
+              Location: "https://accounts.google.com/o/oauth2/auth?client_id=..."
+        
+        step2:
+          description: "User authenticates with Google and gets redirected back"
+          request:
+            method: GET
+            url: "http://localhost:3000/api/auth/google/callback?code=4/0AfJohXn..."
+          response:
+            status: 302
+            headers:
+              Location: "http://localhost:3001/auth/callback?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        
+        step3:
+          description: "Frontend stores token and makes authenticated request"
+          request:
+            method: GET
+            url: "http://localhost:3000/api/auth/me"
+            headers:
+              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          response:
+            status: 200
+            body:
+              success: true
+              data:
+                id: "507f1f77bcf86cd799439011"
+                email: "john.doe@example.com"
+                name: "John Doe"
+                picture: "https://lh3.googleusercontent.com/a/ACg8ocJ..."
+                isActive: true
+                createdAt: "2024-01-15T10:30:00.000Z"
+                updatedAt: "2024-01-15T10:30:00.000Z"
+
+    ErrorResponses:
+      InvalidToken:
+        summary: Invalid JWT token
+        value:
+          status: 401
+          body:
+            success: false
+            error: "Invalid token"
+      
+      MissingToken:
+        summary: Missing JWT token
+        value:
+          status: 401
+          body:
+            success: false
+            error: "Access token required"
+      
+      UserNotFound:
+        summary: User not found
+        value:
+          status: 404
+          body:
+            success: false
+            error: "User not found"
+      
+      ServerError:
+        summary: Internal server error
+        value:
+          status: 500
+          body:
+            success: false
+            error: "Internal server error" 
