@@ -1,0 +1,455 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe - Join Groups API
+  description: API endpoints for joining groups, managing membership, and setting genre preferences
+  version: 1.0.0
+  contact:
+    name: MovieSwipe Team
+    email: support@movieswipe.com
+
+servers:
+  - url: http://localhost:3001
+    description: Development server
+  - url: https://api.movieswipe.com
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/groups/join:
+    post:
+      summary: Join a group
+      description: Join a group using an invitation code provided by the group owner
+      tags:
+        - Groups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - invitationCode
+              properties:
+                invitationCode:
+                  type: string
+                  minLength: 8
+                  maxLength: 8
+                  description: 8-character invitation code provided by group owner
+                  example: "A1B2C3D4"
+      responses:
+        '200':
+          description: Successfully joined the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      groupId:
+                        type: string
+                        description: ID of the joined group
+                        example: "507f1f77bcf86cd799439011"
+                      groupName:
+                        type: string
+                        description: Name of the joined group
+                        example: "Movie Night Crew"
+                      message:
+                        type: string
+                        example: "Successfully joined the group"
+        '400':
+          description: Bad request - missing or invalid invitation code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Invitation code is required"
+        '404':
+          description: Invalid invitation code or group not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Invalid invitation code or group not found"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+  /api/groups/{groupId}/leave:
+    post:
+      summary: Leave a group
+      description: Leave a group that you are a member of
+      tags:
+        - Groups
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID of the group to leave
+          example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: Successfully left the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Successfully left the group"
+        '404':
+          description: Group not found or user is not a member
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Group not found or you are not a member"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+  /api/groups/{groupId}/preferences:
+    post:
+      summary: Update genre preferences
+      description: Update your movie genre preferences for a specific group
+      tags:
+        - Groups
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID of the group
+          example: "507f1f77bcf86cd799439011"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - preferences
+              properties:
+                preferences:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required:
+                      - genreId
+                      - genreName
+                      - weight
+                    properties:
+                      genreId:
+                        type: integer
+                        description: TMDB genre ID
+                        example: 28
+                      genreName:
+                        type: string
+                        description: Name of the genre
+                        example: "Action"
+                      weight:
+                        type: integer
+                        minimum: 1
+                        maximum: 10
+                        description: Preference weight (1-10 scale, 10 being highest preference)
+                        example: 8
+                  example:
+                    - genreId: 28
+                      genreName: "Action"
+                      weight: 8
+                    - genreId: 12
+                      genreName: "Adventure"
+                      weight: 7
+                    - genreId: 35
+                      genreName: "Comedy"
+                      weight: 6
+      responses:
+        '200':
+          description: Preferences updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Preferences updated successfully"
+        '400':
+          description: Bad request - invalid preferences format
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Each preference must have genreId, genreName, and weight (1-10)"
+        '404':
+          description: Group not found or user is not a member
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Group not found or you are not a member"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+    get:
+      summary: Get group preferences
+      description: Get aggregated genre preferences for all members of the group
+      tags:
+        - Groups
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID of the group
+          example: "507f1f77bcf86cd799439011"
+      responses:
+        '200':
+          description: Group preferences retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      groupId:
+                        type: string
+                        description: ID of the group
+                        example: "507f1f77bcf86cd799439011"
+                      preferences:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            genreId:
+                              type: integer
+                              description: TMDB genre ID
+                              example: 28
+                            weight:
+                              type: integer
+                              description: Aggregated weight from all members
+                              example: 24
+                        description: Aggregated preferences sorted by weight (highest first)
+                      memberCount:
+                        type: integer
+                        description: Number of members in the group
+                        example: 3
+        '403':
+          description: Forbidden - user is not a member of the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Access denied. You are not a member of this group."
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Group not found"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+  /api/groups/invite/{inviteCode}:
+    get:
+      summary: Get invitation details
+      description: Get details about a group invitation before joining
+      tags:
+        - Groups
+      parameters:
+        - name: inviteCode
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 8
+          description: 8-character invitation code
+          example: "A1B2C3D4"
+      responses:
+        '200':
+          description: Invitation details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      groupId:
+                        type: string
+                        description: ID of the group
+                        example: "507f1f77bcf86cd799439011"
+                      groupName:
+                        type: string
+                        description: Name of the group
+                        example: "Movie Night Crew"
+                      memberCount:
+                        type: integer
+                        description: Number of current members
+                        example: 3
+                      isActive:
+                        type: boolean
+                        description: Whether the group is active
+                        example: true
+        '400':
+          description: Group is no longer active
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "This group is no longer active"
+        '404':
+          description: Invalid invitation code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Invalid invitation code"
+        '500':
+          description: Internal server error
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication endpoint
+
+  schemas:
+    GenrePreference:
+      type: object
+      properties:
+        genreId:
+          type: integer
+          description: TMDB genre ID
+          example: 28
+        genreName:
+          type: string
+          description: Name of the genre
+          example: "Action"
+        weight:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: Preference weight (1-10 scale)
+          example: 8
+
+    GroupMember:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: ID of the user
+        joinedAt:
+          type: string
+          format: date-time
+          description: When the user joined the group
+        preferences:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenrePreference'
+          description: User's genre preferences for this group
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message
+
+tags:
+  - name: Groups
+    description: Group membership and preference management operations 

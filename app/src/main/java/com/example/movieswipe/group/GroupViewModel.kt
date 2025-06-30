@@ -22,6 +22,14 @@ class GroupViewModel(app: Application) : AndroidViewModel(app) {
     private val _inviteCode = MutableStateFlow<String?>(null)
     val inviteCode: StateFlow<String?> = _inviteCode
 
+    // --- Join Group State ---
+    val joinGroupUiState = MutableStateFlow<JoinGroupUiState>(JoinGroupUiState.Idle)
+    val genrePrefUiState = MutableStateFlow<GenrePrefUiState>(GenrePrefUiState.Idle)
+    var joinedGroupId: String? = null
+        private set
+    var joinedGroupName: String? = null
+        private set
+
     init {
         loadGroups()
     }
@@ -70,4 +78,66 @@ class GroupViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearInviteCode() { _inviteCode.value = null }
+
+    fun getInviteDetails(inviteCode: String) {
+        joinGroupUiState.value = JoinGroupUiState.Loading
+        viewModelScope.launch {
+            val result = repo.getInviteDetails(inviteCode)
+            joinGroupUiState.value = if (result.isSuccess) {
+                JoinGroupUiState.InviteDetails(result.getOrThrow())
+            } else {
+                JoinGroupUiState.Error(result.exceptionOrNull()?.message ?: "Invalid invitation code")
+            }
+        }
+    }
+
+    fun joinGroup(inviteCode: String) {
+        joinGroupUiState.value = JoinGroupUiState.Loading
+        viewModelScope.launch {
+            val result = repo.joinGroup(inviteCode)
+            if (result.isSuccess) {
+                val data = result.getOrThrow()
+                joinedGroupId = data.groupId
+                joinedGroupName = data.groupName
+                joinGroupUiState.value = JoinGroupUiState.Joined(data)
+            } else {
+                joinGroupUiState.value = JoinGroupUiState.Error(result.exceptionOrNull()?.message ?: "Failed to join group")
+            }
+        }
+    }
+
+    fun setGenrePreferences(preferences: List<GenrePreference>) {
+        genrePrefUiState.value = GenrePrefUiState.Loading
+        val groupId = joinedGroupId ?: return
+        viewModelScope.launch {
+            val result = repo.setGenrePreferences(groupId, preferences)
+            genrePrefUiState.value = if (result.isSuccess) {
+                GenrePrefUiState.Success
+            } else {
+                GenrePrefUiState.Error(result.exceptionOrNull()?.message ?: "Failed to set preferences")
+            }
+        }
+    }
+
+    fun resetJoinGroupFlow() {
+        joinGroupUiState.value = JoinGroupUiState.Idle
+        genrePrefUiState.value = GenrePrefUiState.Idle
+        joinedGroupId = null
+        joinedGroupName = null
+    }
+
+    sealed class JoinGroupUiState {
+        object Idle : JoinGroupUiState()
+        object Loading : JoinGroupUiState()
+        data class InviteDetails(val details: InviteDetails) : JoinGroupUiState()
+        data class Joined(val result: JoinGroupResult) : JoinGroupUiState()
+        data class Error(val message: String) : JoinGroupUiState()
+    }
+
+    sealed class GenrePrefUiState {
+        object Idle : GenrePrefUiState()
+        object Loading : GenrePrefUiState()
+        object Success : GenrePrefUiState()
+        data class Error(val message: String) : GenrePrefUiState()
+    }
 }

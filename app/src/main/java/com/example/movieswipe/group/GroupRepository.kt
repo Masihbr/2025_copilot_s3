@@ -89,6 +89,84 @@ class GroupRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun getInviteDetails(inviteCode: String): Result<InviteDetails> = withContext(Dispatchers.IO) {
+        val jwt = authRepo.getJwt() ?: return@withContext Result.failure(Exception("Not authenticated"))
+        val request = Request.Builder()
+            .url("${AuthConfig.BACKEND_BASE_URL}/groups/invite/$inviteCode")
+            .get()
+            .addHeader("Authorization", "Bearer $jwt")
+            .build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext Result.failure(Exception("Invalid or expired invitation code"))
+            val obj = JSONObject(response.body?.string() ?: return@withContext Result.failure(Exception("Empty response")))
+            val data = obj.getJSONObject("data")
+            Result.success(
+                InviteDetails(
+                    groupId = data.getString("groupId"),
+                    groupName = data.getString("groupName"),
+                    memberCount = data.getInt("memberCount"),
+                    isActive = data.getBoolean("isActive")
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun joinGroup(inviteCode: String): Result<JoinGroupResult> = withContext(Dispatchers.IO) {
+        val jwt = authRepo.getJwt() ?: return@withContext Result.failure(Exception("Not authenticated"))
+        val json = JSONObject().apply { put("invitationCode", inviteCode) }
+        val body = json.toString().toRequestBody("application/json".toMediaTypeOrNull())
+        val request = Request.Builder()
+            .url("${AuthConfig.BACKEND_BASE_URL}/groups/join")
+            .post(body)
+            .addHeader("Authorization", "Bearer $jwt")
+            .build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext Result.failure(Exception("Failed to join group"))
+            val obj = JSONObject(response.body?.string() ?: return@withContext Result.failure(Exception("Empty response")))
+            val data = obj.getJSONObject("data")
+            Result.success(
+                JoinGroupResult(
+                    groupId = data.getString("groupId"),
+                    groupName = data.getString("groupName"),
+                    message = data.optString("message")
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setGenrePreferences(groupId: String, preferences: List<GenrePreference>): Result<Unit> = withContext(Dispatchers.IO) {
+        val jwt = authRepo.getJwt() ?: return@withContext Result.failure(Exception("Not authenticated"))
+        val jsonPrefs = JSONArray().apply {
+            preferences.forEach {
+                put(JSONObject().apply {
+                    put("genreId", it.genreId)
+                    put("genreName", it.genreName)
+                    put("weight", it.weight)
+                })
+            }
+        }
+        val json = JSONObject().apply { put("preferences", jsonPrefs) }
+        val body = json.toString().toRequestBody("application/json".toMediaTypeOrNull())
+        val request = Request.Builder()
+            .url("${AuthConfig.BACKEND_BASE_URL}/groups/$groupId/preferences")
+            .post(body)
+            .addHeader("Authorization", "Bearer $jwt")
+            .build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext Result.failure(Exception("Failed to set preferences"))
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 data class Group(
@@ -146,3 +224,16 @@ data class GenrePreference(
         )
     }
 }
+
+data class InviteDetails(
+    val groupId: String,
+    val groupName: String,
+    val memberCount: Int,
+    val isActive: Boolean
+)
+
+data class JoinGroupResult(
+    val groupId: String,
+    val groupName: String,
+    val message: String?
+)

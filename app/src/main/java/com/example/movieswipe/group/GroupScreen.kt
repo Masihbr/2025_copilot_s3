@@ -30,6 +30,22 @@ fun GroupScreen(
     var groupName by remember { mutableStateOf(TextFieldValue("")) }
     var showDialog by remember { mutableStateOf(false) }
     var groupToDelete by remember { mutableStateOf<Group?>(null) }
+    var showJoinDialog by remember { mutableStateOf(false) }
+    var joinCode by remember { mutableStateOf(TextFieldValue("")) }
+    val joinGroupUiState by viewModel.joinGroupUiState.collectAsState()
+    val genrePrefUiState by viewModel.genrePrefUiState.collectAsState()
+    var showGenreDialog by remember { mutableStateOf(false) }
+    var selectedGenres by remember { mutableStateOf(mockedGenres.map { it.copy(weight = 5) }) }
+
+    // FloatingActionButton: Add group or join group
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        FloatingActionButton(onClick = { showDialog = true }, modifier = Modifier.padding(8.dp)) {
+            Text("+")
+        }
+        FloatingActionButton(onClick = { showJoinDialog = true }, modifier = Modifier.padding(8.dp)) {
+            Text("Join")
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -38,11 +54,6 @@ fun GroupScreen(
                     Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                 }
             })
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showDialog = true }) {
-                Text("+")
-            }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -149,6 +160,122 @@ fun GroupScreen(
                     )
                 }
             }
+            // Join Group Dialog
+            if (showJoinDialog) {
+                AlertDialog(
+                    onDismissRequest = { showJoinDialog = false; viewModel.resetJoinGroupFlow() },
+                    title = { Text("Join Group") },
+                    text = {
+                        Column {
+                            OutlinedTextField(
+                                value = joinCode,
+                                onValueChange = { joinCode = it },
+                                label = { Text("Invitation Code") },
+                                singleLine = true
+                            )
+                            if (joinGroupUiState is GroupViewModel.JoinGroupUiState.Error) {
+                                Text((joinGroupUiState as GroupViewModel.JoinGroupUiState.Error).message, color = MaterialTheme.colorScheme.error)
+                            }
+                            if (joinGroupUiState is GroupViewModel.JoinGroupUiState.InviteDetails) {
+                                val details = (joinGroupUiState as GroupViewModel.JoinGroupUiState.InviteDetails).details
+                                Text("Group: ${'$'}{details.groupName} (${details.memberCount} members)")
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Row {
+                            Button(onClick = {
+                                viewModel.getInviteDetails(joinCode.text)
+                            }) { Text("Check") }
+                            Spacer(Modifier.width(8.dp))
+                            Button(onClick = {
+                                viewModel.joinGroup(joinCode.text)
+                            }, enabled = joinGroupUiState is GroupViewModel.JoinGroupUiState.InviteDetails) { Text("Join") }
+                        }
+                    },
+                    dismissButton = {
+                        Button(onClick = { showJoinDialog = false; viewModel.resetJoinGroupFlow() }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            // Genre Preferences Dialog
+            if (joinGroupUiState is GroupViewModel.JoinGroupUiState.Joined && !showGenreDialog) {
+                showGenreDialog = true
+            }
+            if (showGenreDialog) {
+                AlertDialog(
+                    onDismissRequest = { showGenreDialog = false; viewModel.resetJoinGroupFlow(); viewModel.loadGroups() },
+                    title = { Text("Set Genre Preferences for ${viewModel.joinedGroupName ?: "Group"}") },
+                    text = {
+                        Column {
+                            Text("Adjust your preference for each genre (1-10):")
+                            Spacer(Modifier.height(8.dp))
+                            LazyColumn(modifier = Modifier.height(200.dp)) {
+                                items(selectedGenres.size) { idx ->
+                                    val genre = selectedGenres[idx]
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(genre.genreName, modifier = Modifier.width(100.dp))
+                                        Slider(
+                                            value = genre.weight.toFloat(),
+                                            onValueChange = { newVal ->
+                                                selectedGenres = selectedGenres.toMutableList().also { it[idx] = it[idx].copy(weight = newVal.toInt()) }
+                                            },
+                                            valueRange = 1f..10f,
+                                            steps = 8,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text("${'$'}{genre.weight}", modifier = Modifier.width(24.dp))
+                                    }
+                                }
+                            }
+                            if (genrePrefUiState is GroupViewModel.GenrePrefUiState.Error) {
+                                Text((genrePrefUiState as GroupViewModel.GenrePrefUiState.Error).message, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            viewModel.setGenrePreferences(selectedGenres)
+                        }, enabled = genrePrefUiState !is GroupViewModel.GenrePrefUiState.Loading) { Text("Save") }
+                    },
+                    dismissButton = {
+                        Button(onClick = {
+                            showGenreDialog = false
+                            viewModel.resetJoinGroupFlow()
+                            viewModel.loadGroups()
+                        }) { Text("Cancel") }
+                    }
+                )
+                if (genrePrefUiState is GroupViewModel.GenrePrefUiState.Success) {
+                    showGenreDialog = false
+                    viewModel.resetJoinGroupFlow()
+                    viewModel.loadGroups()
+                }
+            }
         }
     }
 }
+
+// Mocked TMDB genre list
+val mockedGenres = listOf(
+    GenrePreference(28, "Action", 5),
+    GenrePreference(12, "Adventure", 5),
+    GenrePreference(16, "Animation", 5),
+    GenrePreference(35, "Comedy", 5),
+    GenrePreference(80, "Crime", 5),
+    GenrePreference(99, "Documentary", 5),
+    GenrePreference(18, "Drama", 5),
+    GenrePreference(10751, "Family", 5),
+    GenrePreference(14, "Fantasy", 5),
+    GenrePreference(36, "History", 5),
+    GenrePreference(27, "Horror", 5),
+    GenrePreference(10402, "Music", 5),
+    GenrePreference(9648, "Mystery", 5),
+    GenrePreference(10749, "Romance", 5),
+    GenrePreference(878, "Science Fiction", 5),
+    GenrePreference(10770, "TV Movie", 5),
+    GenrePreference(53, "Thriller", 5),
+    GenrePreference(10752, "War", 5),
+    GenrePreference(37, "Western", 5)
+)
