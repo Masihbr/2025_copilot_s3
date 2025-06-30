@@ -1,0 +1,495 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe - Group Management API
+  description: API endpoints for managing groups in the MovieSwipe application
+  version: 1.0.0
+  contact:
+    name: MovieSwipe Team
+    email: support@movieswipe.com
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.movieswipe.com
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/groups:
+    post:
+      summary: Create a new group
+      description: Creates a new group with the authenticated user as the owner
+      tags:
+        - Groups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  description: Name of the group
+                  example: "Movie Night Crew"
+      responses:
+        '201':
+          description: Group created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Group ID
+                        example: "507f1f77bcf86cd799439011"
+                      name:
+                        type: string
+                        example: "Movie Night Crew"
+                      ownerId:
+                        type: string
+                        description: ID of the group owner
+                        example: "507f1f77bcf86cd799439012"
+                      invitationCode:
+                        type: string
+                        description: Unique invitation code for the group
+                        example: "A1B2C3D4"
+                      members:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            userId:
+                              type: string
+                            joinedAt:
+                              type: string
+                              format: date-time
+                            preferences:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  genreId:
+                                    type: number
+                                  genreName:
+                                    type: string
+                                  weight:
+                                    type: number
+                        example: []
+                      isActive:
+                        type: boolean
+                        example: true
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+        '400':
+          description: Bad request - validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Group name is required"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+    get:
+      summary: Get user's groups
+      description: Returns all groups where the authenticated user is a member or owner
+      tags:
+        - Groups
+      responses:
+        '200':
+          description: Groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: "507f1f77bcf86cd799439011"
+                        name:
+                          type: string
+                          example: "Movie Night Crew"
+                        ownerId:
+                          type: string
+                          example: "507f1f77bcf86cd799439012"
+                        invitationCode:
+                          type: string
+                          example: "A1B2C3D4"
+                        members:
+                          type: array
+                          items:
+                            type: object
+                        isActive:
+                          type: boolean
+                          example: true
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+  /api/groups/{groupId}:
+    parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: ID of the group
+        example: "507f1f77bcf86cd799439011"
+
+    get:
+      summary: Get group details
+      description: Returns details of a specific group (user must be a member)
+      tags:
+        - Groups
+      responses:
+        '200':
+          description: Group details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: "507f1f77bcf86cd799439011"
+                      name:
+                        type: string
+                        example: "Movie Night Crew"
+                      ownerId:
+                        type: string
+                        example: "507f1f77bcf86cd799439012"
+                      invitationCode:
+                        type: string
+                        example: "A1B2C3D4"
+                      members:
+                        type: array
+                        items:
+                          type: object
+                      isActive:
+                        type: boolean
+                        example: true
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+        '403':
+          description: Forbidden - user is not a member of the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Access denied. You are not a member of this group."
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Group not found"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+    delete:
+      summary: Delete a group
+      description: Deletes a group (only the owner can delete)
+      tags:
+        - Groups
+      responses:
+        '200':
+          description: Group deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Group deleted successfully"
+        '404':
+          description: Group not found or user is not the owner
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Group not found or you are not the owner"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+  /api/groups/{groupId}/invite:
+    parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: ID of the group
+        example: "507f1f77bcf86cd799439011"
+
+    post:
+      summary: Generate new invitation code
+      description: Generates a new invitation code for the group (only owner can generate)
+      tags:
+        - Groups
+      responses:
+        '200':
+          description: New invitation code generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      invitationCode:
+                        type: string
+                        description: New invitation code
+                        example: "E5F6G7H8"
+        '404':
+          description: Group not found or user is not the owner
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Group not found or you are not the owner"
+        '401':
+          description: Unauthorized - invalid or missing token
+        '500':
+          description: Internal server error
+
+  /api/groups/invite/{inviteCode}:
+    parameters:
+      - name: inviteCode
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Invitation code
+        example: "A1B2C3D4"
+
+    get:
+      summary: Get invitation details
+      description: Returns details about a group invitation
+      tags:
+        - Groups
+      responses:
+        '200':
+          description: Invitation details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      groupId:
+                        type: string
+                        example: "507f1f77bcf86cd799439011"
+                      groupName:
+                        type: string
+                        example: "Movie Night Crew"
+                      memberCount:
+                        type: number
+                        description: Number of members in the group
+                        example: 3
+                      isActive:
+                        type: boolean
+                        example: true
+        '400':
+          description: Group is no longer active
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "This group is no longer active"
+        '404':
+          description: Invalid invitation code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Invalid invitation code"
+        '500':
+          description: Internal server error
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication endpoint
+
+  schemas:
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the group
+        name:
+          type: string
+          description: Name of the group
+        ownerId:
+          type: string
+          description: ID of the group owner
+        invitationCode:
+          type: string
+          description: Unique invitation code for the group
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupMember'
+        isActive:
+          type: boolean
+          description: Whether the group is active
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    GroupMember:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: ID of the user
+        joinedAt:
+          type: string
+          format: date-time
+          description: When the user joined the group
+        preferences:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenrePreference'
+          description: User's genre preferences
+
+    GenrePreference:
+      type: object
+      properties:
+        genreId:
+          type: number
+          description: TMDB genre ID
+        genreName:
+          type: string
+          description: Name of the genre
+        weight:
+          type: number
+          minimum: 1
+          maximum: 10
+          description: Preference weight (1-10 scale)
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message
+
+tags:
+  - name: Groups
+    description: Group management operations 
