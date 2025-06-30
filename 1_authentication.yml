@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe Authentication API
+  version: 1.0.0
+  description: |
+    Authentication endpoints for MovieSwipe backend using Google Sign-In and JWT.
+servers:
+  - url: http://localhost:3001/api
+    description: Local server
+paths:
+  /auth/google:
+    post:
+      summary: Google Sign-In authentication
+      description: |
+        Accepts a Google ID token, verifies it, creates/updates the user, and returns a JWT and user profile.
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                  description: Google ID token from frontend
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  token:
+                    type: string
+                    description: JWT for authenticated requests
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        '400':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/profile:
+    get:
+      summary: Get authenticated user profile
+      description: |
+        Returns the profile of the currently authenticated user. Requires a valid JWT in the Authorization header.
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Unauthorized or missing/invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        googleId:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        profilePicture:
+          type: string
+          nullable: true
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error:
+          type: string 
