@@ -1,0 +1,457 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe Movie Selection API
+  description: API for ending voting sessions and displaying selected movies
+  version: 1.0.0
+  contact:
+    name: MovieSwipe Team
+    email: support@movieswipe.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.movieswipe.com/api
+    description: Production server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Movie:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: TMDB movie ID
+        title:
+          type: string
+          description: Movie title
+        overview:
+          type: string
+          description: Movie overview/synopsis
+        posterPath:
+          type: string
+          nullable: true
+          description: Path to movie poster image
+        backdropPath:
+          type: string
+          nullable: true
+          description: Path to movie backdrop image
+        releaseDate:
+          type: string
+          format: date
+          description: Movie release date
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieGenre'
+        voteAverage:
+          type: number
+          description: Average rating from TMDB
+        voteCount:
+          type: integer
+          description: Number of votes on TMDB
+        runtime:
+          type: integer
+          nullable: true
+          description: Movie runtime in minutes
+        tagline:
+          type: string
+          nullable: true
+          description: Movie tagline
+
+    MovieGenre:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Genre ID
+        name:
+          type: string
+          description: Genre name
+
+    Vote:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Vote ID
+        sessionId:
+          type: string
+          description: Voting session ID
+        userId:
+          type: string
+          description: User ID who cast the vote
+        movieId:
+          type: integer
+          description: Movie ID being voted on
+        vote:
+          type: string
+          enum: [yes, no]
+          description: Vote choice
+        timestamp:
+          type: string
+          format: date-time
+          description: When the vote was cast
+
+    VotingResult:
+      type: object
+      properties:
+        movie:
+          $ref: '#/components/schemas/Movie'
+          description: Movie details
+        yesVotes:
+          type: integer
+          description: Number of yes votes
+        noVotes:
+          type: integer
+          description: Number of no votes
+        totalVotes:
+          type: integer
+          description: Total number of votes cast for this movie
+        approvalRate:
+          type: integer
+          description: Percentage of yes votes (0-100)
+        score:
+          type: number
+          description: Calculated score based on votes and movie rating
+
+    MovieSelectionResults:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          description: Voting session ID
+        groupId:
+          type: string
+          description: Group ID
+        selectedMovie:
+          $ref: '#/components/schemas/Movie'
+          description: The winning movie
+        votingResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/VotingResult'
+          description: Detailed voting results for all movies
+        totalParticipants:
+          type: integer
+          description: Total number of participants in the group
+        totalVotesCast:
+          type: integer
+          description: Total number of votes cast in the session
+        endTime:
+          type: string
+          format: date-time
+          description: When the session ended
+        sessionDuration:
+          type: integer
+          description: Session duration in minutes
+
+    VotingSession:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Voting session ID
+        groupId:
+          type: string
+          description: Group ID
+        status:
+          type: string
+          enum: [pending, active, completed]
+          description: Session status
+        movies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Movie'
+          description: List of movies in the voting session
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vote'
+          description: All votes cast in the session
+        startTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the session started
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the session ended
+        selectedMovie:
+          $ref: '#/components/schemas/Movie'
+          nullable: true
+          description: The winning movie (only set when completed)
+        createdAt:
+          type: string
+          format: date-time
+          description: When the session was created
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the session was last updated
+        userVotes:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [yes, no]
+          description: Mapping of movieId to the current user's vote (yes/no)
+
+    EnhancedSessionResults:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          description: Voting session ID
+        groupId:
+          type: string
+          description: Group ID
+        selectedMovie:
+          $ref: '#/components/schemas/Movie'
+          description: The winning movie
+        totalVotes:
+          type: integer
+          description: Total number of votes cast
+        endTime:
+          type: string
+          format: date-time
+          description: When the session ended
+        votingResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/VotingResult'
+          description: Detailed voting results for all movies
+        totalParticipants:
+          type: integer
+          description: Total number of participants
+        totalVotesCast:
+          type: integer
+          description: Total number of votes cast
+        sessionDuration:
+          type: integer
+          description: Session duration in minutes
+
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the request was successful
+        data:
+          description: Response data
+        message:
+          type: string
+          description: Success message
+        error:
+          type: string
+          description: Error message
+
+paths:
+  /voting/sessions/{sessionId}/end:
+    post:
+      summary: End voting session and select winning movie
+      description: Ends an active voting session, calculates results, and selects the winning movie. Only group owners can end sessions.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session ended successfully and movie selected
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/VotingSession'
+                          - type: object
+                            properties:
+                              votingResults:
+                                type: array
+                                items:
+                                  $ref: '#/components/schemas/VotingResult'
+                              totalParticipants:
+                                type: integer
+                              totalVotesCast:
+                                type: integer
+                              sessionDuration:
+                                type: integer
+                      message:
+                        type: string
+                        example: "Voting session ended successfully. Movie selected!"
+        '400':
+          description: Session is not active or invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Only group owner can end sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /voting/sessions/{sessionId}/selection:
+    get:
+      summary: Get detailed movie selection results
+      description: Retrieves comprehensive movie selection results for a completed voting session, including voting statistics and the winning movie.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Movie selection results retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MovieSelectionResults'
+        '400':
+          description: Session is not completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /voting/sessions/{sessionId}/results:
+    get:
+      summary: Get enhanced voting results
+      description: Retrieves enhanced voting results for a completed session, including detailed statistics and the selected movie.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Enhanced results retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EnhancedSessionResults'
+        '400':
+          description: Session is not completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /voting/sessions/{sessionId}:
+    get:
+      summary: Get voting session details
+      description: Retrieves detailed information about a voting session, including the selected movie if completed.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      responses:
+        '200':
+          description: Session details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingSession'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+tags:
+  - name: Movie Selection
+    description: Operations for ending voting sessions and viewing selected movies
+  - name: Voting Results
+    description: Operations for viewing detailed voting results and statistics 

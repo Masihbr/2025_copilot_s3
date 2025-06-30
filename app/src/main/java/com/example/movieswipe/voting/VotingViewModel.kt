@@ -29,6 +29,10 @@ class VotingViewModel(app: Application) : AndroidViewModel(app) {
     private var userVotes: MutableMap<Int, String> = mutableMapOf()
     private var currentIndex = 0
 
+    // --- Movie selection state ---
+    private val _selectionState = MutableStateFlow<MovieSelectionUiState>(MovieSelectionUiState.Idle)
+    val selectionState: StateFlow<MovieSelectionUiState> = _selectionState
+
     fun loadSession(groupId: String) {
         _sessionState.value = VotingSessionUiState.Loading
         viewModelScope.launch {
@@ -131,6 +135,35 @@ class VotingViewModel(app: Application) : AndroidViewModel(app) {
         _sessionState.value = VotingSessionUiState.Idle
     }
 
+    // --- Movie selection logic ---
+    fun endSessionAndFetchResults(sessionId: String) {
+        _selectionState.value = MovieSelectionUiState.Loading
+        viewModelScope.launch {
+            val result = repo.endSession(sessionId)
+            _selectionState.value = if (result.isSuccess) {
+                MovieSelectionUiState.Results(result.getOrThrow())
+            } else {
+                MovieSelectionUiState.Error(result.exceptionOrNull()?.message ?: "Failed to end session")
+            }
+        }
+    }
+
+    fun fetchSelectionResults(sessionId: String) {
+        _selectionState.value = MovieSelectionUiState.Loading
+        viewModelScope.launch {
+            val result = repo.getMovieSelectionResults(sessionId)
+            _selectionState.value = if (result.isSuccess) {
+                MovieSelectionUiState.Results(result.getOrThrow())
+            } else {
+                MovieSelectionUiState.Error(result.exceptionOrNull()?.message ?: "Failed to fetch results")
+            }
+        }
+    }
+
+    fun resetSelection() {
+        _selectionState.value = MovieSelectionUiState.Idle
+    }
+
     sealed class VotingUiState {
         object Idle : VotingUiState()
         object Loading : VotingUiState()
@@ -140,5 +173,12 @@ class VotingViewModel(app: Application) : AndroidViewModel(app) {
             val currentIndex: Int
         ) : VotingUiState()
         data class Error(val message: String) : VotingUiState()
+    }
+
+    sealed class MovieSelectionUiState {
+        object Idle : MovieSelectionUiState()
+        object Loading : MovieSelectionUiState()
+        data class Results(val results: MovieSelectionResults) : MovieSelectionUiState()
+        data class Error(val message: String) : MovieSelectionUiState()
     }
 }

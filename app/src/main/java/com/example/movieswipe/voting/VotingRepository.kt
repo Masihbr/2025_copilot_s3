@@ -118,6 +118,42 @@ class VotingRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun endSession(sessionId: String): Result<MovieSelectionResults> = withContext(Dispatchers.IO) {
+        val jwt = authRepo.getJwt() ?: return@withContext Result.failure(Exception("Not authenticated"))
+        val request = Request.Builder()
+            .url("${AuthConfig.BACKEND_BASE_URL}/voting/sessions/$sessionId/end")
+            .post("".toRequestBody())
+            .addHeader("Authorization", "Bearer $jwt")
+            .build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext Result.failure(Exception("Failed to end session"))
+            val obj = JSONObject(response.body?.string() ?: return@withContext Result.failure(Exception("Empty response")))
+            val data = obj.getJSONObject("data")
+            Result.success(MovieSelectionResults.fromJson(data))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getMovieSelectionResults(sessionId: String): Result<MovieSelectionResults> = withContext(Dispatchers.IO) {
+        val jwt = authRepo.getJwt() ?: return@withContext Result.failure(Exception("Not authenticated"))
+        val request = Request.Builder()
+            .url("${AuthConfig.BACKEND_BASE_URL}/voting/sessions/$sessionId/selection")
+            .get()
+            .addHeader("Authorization", "Bearer $jwt")
+            .build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext Result.failure(Exception("Failed to get selection results"))
+            val obj = JSONObject(response.body?.string() ?: return@withContext Result.failure(Exception("Empty response")))
+            val data = obj.getJSONObject("data")
+            Result.success(MovieSelectionResults.fromJson(data))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 // Data models for VotingSession and Movie
@@ -226,6 +262,52 @@ data class VotingSessionDetails(
             selectedMovie = obj.optJSONObject("selectedMovie")?.let { Movie.fromJson(it) },
             createdAt = obj.getString("createdAt"),
             updatedAt = obj.getString("updatedAt")
+        )
+    }
+}
+
+data class MovieSelectionResults(
+    val sessionId: String,
+    val groupId: String,
+    val selectedMovie: Movie?,
+    val votingResults: List<VotingResult>,
+    val totalParticipants: Int,
+    val totalVotesCast: Int,
+    val endTime: String?,
+    val sessionDuration: Int?
+) {
+    companion object {
+        fun fromJson(obj: JSONObject): MovieSelectionResults = MovieSelectionResults(
+            sessionId = obj.getString("sessionId"),
+            groupId = obj.getString("groupId"),
+            selectedMovie = obj.optJSONObject("selectedMovie")?.let { Movie.fromJson(it) },
+            votingResults = obj.optJSONArray("votingResults")?.let { arr ->
+                (0 until arr.length()).map { VotingResult.fromJson(arr.getJSONObject(it)) }
+            } ?: emptyList(),
+            totalParticipants = obj.optInt("totalParticipants"),
+            totalVotesCast = obj.optInt("totalVotesCast"),
+            endTime = obj.optString("endTime", null),
+            sessionDuration = if (obj.has("sessionDuration") && !obj.isNull("sessionDuration")) obj.getInt("sessionDuration") else null
+        )
+    }
+}
+
+data class VotingResult(
+    val movie: Movie,
+    val yesVotes: Int,
+    val noVotes: Int,
+    val totalVotes: Int,
+    val approvalRate: Int,
+    val score: Double
+) {
+    companion object {
+        fun fromJson(obj: JSONObject): VotingResult = VotingResult(
+            movie = Movie.fromJson(obj.getJSONObject("movie")),
+            yesVotes = obj.getInt("yesVotes"),
+            noVotes = obj.getInt("noVotes"),
+            totalVotes = obj.getInt("totalVotes"),
+            approvalRate = obj.getInt("approvalRate"),
+            score = obj.getDouble("score")
         )
     }
 }
