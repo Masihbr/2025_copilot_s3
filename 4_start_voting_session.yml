@@ -1,0 +1,579 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe Voting Session API
+  description: API for managing voting sessions and movie recommendations
+  version: 1.0.0
+  contact:
+    name: MovieSwipe Team
+    email: support@movieswipe.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.movieswipe.com/api
+    description: Production server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Movie:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: TMDB movie ID
+        title:
+          type: string
+          description: Movie title
+        overview:
+          type: string
+          description: Movie overview/synopsis
+        posterPath:
+          type: string
+          nullable: true
+          description: Path to movie poster image
+        backdropPath:
+          type: string
+          nullable: true
+          description: Path to movie backdrop image
+        releaseDate:
+          type: string
+          format: date
+          description: Movie release date
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieGenre'
+        voteAverage:
+          type: number
+          description: Average rating from TMDB
+        voteCount:
+          type: integer
+          description: Number of votes on TMDB
+        runtime:
+          type: integer
+          nullable: true
+          description: Movie runtime in minutes
+        tagline:
+          type: string
+          nullable: true
+          description: Movie tagline
+
+    MovieGenre:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Genre ID
+        name:
+          type: string
+          description: Genre name
+
+    Vote:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Vote ID
+        sessionId:
+          type: string
+          description: Voting session ID
+        userId:
+          type: string
+          description: User ID who cast the vote
+        movieId:
+          type: integer
+          description: Movie ID being voted on
+        vote:
+          type: string
+          enum: [yes, no]
+          description: Vote choice
+        timestamp:
+          type: string
+          format: date-time
+          description: When the vote was cast
+
+    VotingSession:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Voting session ID
+        groupId:
+          type: string
+          description: Group ID
+        status:
+          type: string
+          enum: [pending, active, completed]
+          description: Session status
+        movies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Movie'
+          description: List of movies in the voting session
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vote'
+          description: All votes cast in the session
+        startTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the session started
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the session ended
+        selectedMovie:
+          $ref: '#/components/schemas/Movie'
+          nullable: true
+          description: The winning movie (only set when completed)
+        createdAt:
+          type: string
+          format: date-time
+          description: When the session was created
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the session was last updated
+
+    VotingResults:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          description: Voting session ID
+        groupId:
+          type: string
+          description: Group ID
+        selectedMovie:
+          $ref: '#/components/schemas/Movie'
+          description: The winning movie
+        totalVotes:
+          type: integer
+          description: Total number of votes cast
+        endTime:
+          type: string
+          format: date-time
+          description: When the session ended
+
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the request was successful
+        data:
+          description: Response data
+        message:
+          type: string
+          description: Success message
+        error:
+          type: string
+          description: Error message
+
+    CreateSessionRequest:
+      type: object
+      required:
+        - groupId
+      properties:
+        groupId:
+          type: string
+          description: ID of the group to create a voting session for
+
+    CastVoteRequest:
+      type: object
+      required:
+        - movieId
+        - vote
+      properties:
+        movieId:
+          type: integer
+          description: ID of the movie to vote on
+        vote:
+          type: string
+          enum: [yes, no]
+          description: Vote choice
+
+paths:
+  /voting/sessions:
+    post:
+      summary: Create a new voting session
+      description: Creates a new voting session for a group with intelligent movie recommendations
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: Voting session created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingSession'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /voting/sessions/active/{groupId}:
+    get:
+      summary: Get active voting session for a group
+      description: Retrieves the currently active or pending voting session for a group
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Group ID
+      responses:
+        '200':
+          description: Active session found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingSession'
+        '404':
+          description: No active session found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /voting/sessions/{sessionId}:
+    get:
+      summary: Get voting session details
+      description: Retrieves detailed information about a specific voting session
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      responses:
+        '200':
+          description: Session details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingSession'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+    delete:
+      summary: Delete a voting session
+      description: Deletes a voting session (only group owner can delete)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      responses:
+        '200':
+          description: Session deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          description: Session not found or user not authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /voting/sessions/{sessionId}/start:
+    post:
+      summary: Start a voting session
+      description: Starts a pending voting session (only group owner can start)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      responses:
+        '200':
+          description: Session started successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingSession'
+                      message:
+                        type: string
+                        example: "Voting session started successfully"
+        '400':
+          description: Session is not in pending status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /voting/sessions/{sessionId}/end:
+    post:
+      summary: End a voting session
+      description: Ends an active voting session and selects the winning movie (only group owner can end)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      responses:
+        '200':
+          description: Session ended successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingSession'
+                      message:
+                        type: string
+                        example: "Voting session ended successfully"
+        '400':
+          description: Session is not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /voting/sessions/{sessionId}/votes:
+    get:
+      summary: Get session votes
+      description: Retrieves all votes cast in a voting session
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      responses:
+        '200':
+          description: Votes retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Vote'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+    post:
+      summary: Cast a vote
+      description: Cast a vote for a movie in an active voting session
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CastVoteRequest'
+      responses:
+        '200':
+          description: Vote cast successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Vote cast successfully"
+        '400':
+          description: Invalid request or session not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /voting/sessions/{sessionId}/results:
+    get:
+      summary: Get voting results
+      description: Retrieves the results of a completed voting session
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      responses:
+        '200':
+          description: Results retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingResults'
+        '400':
+          description: Session is not completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /voting/sessions/history/{groupId}:
+    get:
+      summary: Get voting session history
+      description: Retrieves the history of completed voting sessions for a group
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Group ID
+      responses:
+        '200':
+          description: History retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/VotingSession'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+tags:
+  - name: Voting Sessions
+    description: Operations for managing voting sessions
+  - name: Voting
+    description: Operations for casting and managing votes 

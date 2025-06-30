@@ -16,6 +16,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.movieswipe.voting.VotingViewModel
+import com.example.movieswipe.voting.VotingSessionUiState
+import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -36,6 +39,9 @@ fun GroupScreen(
     val genrePrefUiState by viewModel.genrePrefUiState.collectAsState()
     var showGenreDialog by remember { mutableStateOf(false) }
     var selectedGenres by remember { mutableStateOf(mockedGenres.map { it.copy(weight = 5) }) }
+    // Add VotingViewModel for session management
+    val votingViewModel: VotingViewModel = composeViewModel()
+    var expandedGroupId by remember { mutableStateOf<String?>(null) }
 
     // FloatingActionButton: Add group or join group
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -97,6 +103,24 @@ fun GroupScreen(
                                                 Text("Delete")
                                             }
                                         }
+                                        Spacer(Modifier.width(8.dp))
+                                        // Expand/collapse voting session controls
+                                        Button(onClick = {
+                                            expandedGroupId = if (expandedGroupId == group.id) null else group.id
+                                            votingViewModel.loadSession(group.id)
+                                        }) {
+                                            Text("Voting Session")
+                                        }
+                                    }
+                                    // Voting session controls (expanded)
+                                    if (expandedGroupId == group.id) {
+                                        val sessionState by votingViewModel.sessionState.collectAsState()
+                                        VotingSessionControls(
+                                            groupId = group.id,
+                                            isOwner = group.ownerId == group.members.firstOrNull()?.userId,
+                                            sessionState = sessionState,
+                                            votingViewModel = votingViewModel
+                                        )
                                     }
                                 }
                             }
