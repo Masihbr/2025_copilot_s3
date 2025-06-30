@@ -1,0 +1,291 @@
+openapi: 3.0.3
+info:
+  title: MovieSwipe Vote for Movie API
+  description: API for voting (swiping) on movies in a voting session
+  version: 1.0.0
+  contact:
+    name: MovieSwipe Team
+    email: support@movieswipe.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.movieswipe.com/api
+    description: Production server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Movie:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        overview:
+          type: string
+        posterPath:
+          type: string
+          nullable: true
+        backdropPath:
+          type: string
+          nullable: true
+        releaseDate:
+          type: string
+          format: date
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieGenre'
+        voteAverage:
+          type: number
+        voteCount:
+          type: integer
+        runtime:
+          type: integer
+          nullable: true
+        tagline:
+          type: string
+          nullable: true
+
+    MovieGenre:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    Vote:
+      type: object
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        userId:
+          type: string
+        movieId:
+          type: integer
+        vote:
+          type: string
+          enum: [yes, no]
+        timestamp:
+          type: string
+          format: date-time
+
+    VotingSession:
+      type: object
+      properties:
+        id:
+          type: string
+        groupId:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, completed]
+        movies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Movie'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vote'
+        startTime:
+          type: string
+          format: date-time
+          nullable: true
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+        selectedMovie:
+          $ref: '#/components/schemas/Movie'
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        userVotes:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [yes, no]
+          description: Mapping of movieId to the current user's vote (yes/no)
+
+    CastVoteRequest:
+      type: object
+      required:
+        - movieId
+        - vote
+      properties:
+        movieId:
+          type: integer
+        vote:
+          type: string
+          enum: [yes, no]
+
+    CastVoteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        userVotes:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [yes, no]
+          description: Mapping of movieId to the current user's vote (yes/no)
+
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          description: Response data
+        message:
+          type: string
+        error:
+          type: string
+
+paths:
+  /voting/sessions/{sessionId}/votes:
+    post:
+      summary: Cast a vote (swipe) for a movie
+      description: Cast a yes/no vote for a movie in an active voting session. Swiping right is "yes", swiping left is "no". Users can change their vote by voting again.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Voting session ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CastVoteRequest'
+      responses:
+        '200':
+          description: Vote cast successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CastVoteResponse'
+        '400':
+          description: Invalid request or session not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Session or movie not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+    get:
+      summary: Get all votes for a session
+      description: Retrieves all votes cast in a voting session.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Votes retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Vote'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /voting/sessions/{sessionId}:
+    get:
+      summary: Get voting session details (with user votes)
+      description: Retrieves detailed information about a voting session, including which movies the current user has voted on and their vote (for swipe UI state).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session details retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/VotingSession'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+tags:
+  - name: Voting
+    description: Operations for voting (swiping) on movies in a session 

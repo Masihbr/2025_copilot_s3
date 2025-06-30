@@ -73,6 +73,51 @@ class VotingRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun castVote(sessionId: String, movieId: Int, vote: String): Result<Map<Int, String>> = withContext(Dispatchers.IO) {
+        val jwt = authRepo.getJwt() ?: return@withContext Result.failure(Exception("Not authenticated"))
+        val json = JSONObject().apply {
+            put("movieId", movieId)
+            put("vote", vote)
+        }
+        val body = json.toString().toRequestBody("application/json".toMediaTypeOrNull())
+        val request = Request.Builder()
+            .url("${AuthConfig.BACKEND_BASE_URL}/voting/sessions/$sessionId/votes")
+            .post(body)
+            .addHeader("Authorization", "Bearer $jwt")
+            .build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext Result.failure(Exception("Failed to cast vote"))
+            val obj = JSONObject(response.body?.string() ?: return@withContext Result.failure(Exception("Empty response")))
+            val userVotesObj = obj.optJSONObject("userVotes") ?: JSONObject()
+            val userVotes = mutableMapOf<Int, String>()
+            userVotesObj.keys().forEach { key ->
+                userVotes[key.toInt()] = userVotesObj.getString(key)
+            }
+            Result.success(userVotes)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getSessionDetails(sessionId: String): Result<VotingSessionDetails> = withContext(Dispatchers.IO) {
+        val jwt = authRepo.getJwt() ?: return@withContext Result.failure(Exception("Not authenticated"))
+        val request = Request.Builder()
+            .url("${AuthConfig.BACKEND_BASE_URL}/voting/sessions/$sessionId")
+            .get()
+            .addHeader("Authorization", "Bearer $jwt")
+            .build()
+        try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext Result.failure(Exception("Failed to get session details"))
+            val obj = JSONObject(response.body?.string() ?: return@withContext Result.failure(Exception("Empty response")))
+            val data = obj.getJSONObject("data")
+            Result.success(VotingSessionDetails.fromJson(data))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 // Data models for VotingSession and Movie
@@ -145,6 +190,42 @@ data class MovieGenre(
         fun fromJson(obj: JSONObject): MovieGenre = MovieGenre(
             id = obj.getInt("id"),
             name = obj.getString("name")
+        )
+    }
+}
+
+data class VotingSessionDetails(
+    val id: String,
+    val groupId: String,
+    val status: String,
+    val movies: List<Movie>,
+    val userVotes: Map<Int, String>,
+    val startTime: String?,
+    val endTime: String?,
+    val selectedMovie: Movie?,
+    val createdAt: String,
+    val updatedAt: String
+) {
+    companion object {
+        fun fromJson(obj: JSONObject): VotingSessionDetails = VotingSessionDetails(
+            id = obj.getString("id"),
+            groupId = obj.getString("groupId"),
+            status = obj.getString("status"),
+            movies = obj.optJSONArray("movies")?.let { arr ->
+                (0 until arr.length()).map { Movie.fromJson(arr.getJSONObject(it)) }
+            } ?: emptyList(),
+            userVotes = obj.optJSONObject("userVotes")?.let { votesObj ->
+                val map = mutableMapOf<Int, String>()
+                votesObj.keys().forEach { key ->
+                    map[key.toInt()] = votesObj.getString(key)
+                }
+                map
+            } ?: emptyMap(),
+            startTime = obj.optString("startTime", null),
+            endTime = obj.optString("endTime", null),
+            selectedMovie = obj.optJSONObject("selectedMovie")?.let { Movie.fromJson(it) },
+            createdAt = obj.getString("createdAt"),
+            updatedAt = obj.getString("updatedAt")
         )
     }
 }

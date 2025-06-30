@@ -16,7 +16,8 @@ fun VotingSessionControls(
     groupId: String,
     isOwner: Boolean,
     sessionState: VotingSessionUiState,
-    votingViewModel: VotingViewModel
+    votingViewModel: VotingViewModel,
+    onVoteSession: ((String) -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
     Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -44,10 +45,11 @@ fun VotingSessionControls(
             }
             is VotingSessionUiState.Active -> {
                 Text("Voting session is active!")
-                // You can add navigation to the voting screen here
+                Button(onClick = { onVoteSession?.invoke(sessionState.session.id) }) {
+                    Text("Go to Voting")
+                }
             }
             VotingSessionUiState.Idle -> {}
         }
     }
 }
-
